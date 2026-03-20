@@ -194,7 +194,7 @@ def score_llm(title: str, excerpt: str) -> int:
         )
         
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=f"{cfg.LLM_CURATOR_SYSTEM_PROMPT}\n\n{prompt}",
         )
         

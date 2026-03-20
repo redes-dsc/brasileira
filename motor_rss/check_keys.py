@@ -15,7 +15,7 @@ for i, suffix in enumerate(["", "_2", "_3"], 1):
     try:
         from google import genai
         client = genai.Client(api_key=key)
-        resp = client.models.generate_content(model="gemini-2.0-flash", contents="Responda apenas: OK")
+        resp = client.models.generate_content(model="gemini-2.5-flash", contents="Responda apenas: OK")
         results[f"gemini_{i}"] = f"OK ({resp.text.strip()[:20]})"
     except Exception as e:
         results[f"gemini_{i}"] = f"ERRO: {str(e)[:100]}"

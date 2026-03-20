@@ -34,7 +34,7 @@ WP_APP_PASSWORD: str = os.environ.get("WP_APP_PASSWORD", "")
 
 GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
 
-GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 GEMINI_TIMEOUT: int = int(os.environ.get("GEMINI_TIMEOUT", "20"))
 

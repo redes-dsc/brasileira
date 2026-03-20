@@ -6,7 +6,7 @@ regerar_excerpts.py
 
 Reprocessa APENAS os excerpts ruins (curtos, vazios ou fallback)
 
-usando gemini-2.0-flash via nova biblioteca google-genai.
+usando gemini-2.5-flash via nova biblioteca google-genai.
 
 """
 
@@ -146,7 +146,7 @@ def gerar_excerpt(title, content):
 
         resp = client.models.generate_content(
 
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
 
             contents=prompt,
 

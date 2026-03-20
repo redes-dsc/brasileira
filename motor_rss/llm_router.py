@@ -213,7 +213,7 @@ def _call_gemini(system_prompt: str, user_prompt: str) -> str:
     from google.genai import types
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=user_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,

@@ -336,7 +336,7 @@ def _call_openai_nano(system_prompt: str, user_prompt: str) -> str:
 # Usados para triagem, classificação, tarefas auxiliares
 
 def _call_qwen(system_prompt: str, user_prompt: str) -> str:
-    """Qwen Plus — alternativa econômica."""
+    """Qwen Plus (legacy) — alternativa econômica."""
     key = _next_key("qwen", config.QWEN_KEYS)
     if not key:
         raise ValueError("Nenhuma QWEN_API_KEY configurada")
@@ -347,6 +347,72 @@ def _call_qwen(system_prompt: str, user_prompt: str) -> str:
     )
     response = client.chat.completions.create(
         model="qwen-plus",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen3_max(system_prompt: str, user_prompt: str) -> str:
+    """Qwen3 Max — modelo mais capaz da Alibaba."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3-max",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen35_plus(system_prompt: str, user_prompt: str) -> str:
+    """Qwen 3.5 Plus — equilíbrio inteligência/custo."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3.5-plus",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen35_flash(system_prompt: str, user_prompt: str) -> str:
+    """Qwen 3.5 Flash — ultra-rápido e econômico."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3.5-flash",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -394,42 +460,323 @@ def _call_gemini_lite(system_prompt: str, user_prompt: str) -> str:
     return response.text
 
 
+# ─── Gemini 3 (Preview) ──────────────────────────────
+
+def _call_gemini3_pro(system_prompt: str, user_prompt: str) -> str:
+    """Gemini 3.1 Pro Preview — reasoning avançado, agentes e coding."""
+    key = _next_key("gemini", config.GEMINI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GEMINI_API_KEY configurada")
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    response = client.models.generate_content(
+        model="gemini-3.1-pro-preview",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
+    )
+    return response.text
+
+
+def _call_gemini3_flash(system_prompt: str, user_prompt: str) -> str:
+    """Gemini 3 Flash Preview — frontier-class por fração do custo."""
+    key = _next_key("gemini", config.GEMINI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GEMINI_API_KEY configurada")
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
+    )
+    return response.text
+
+
+def _call_gemini3_flash_lite(system_prompt: str, user_prompt: str) -> str:
+    """Gemini 3.1 Flash-Lite Preview — ultra-econômico frontier."""
+    key = _next_key("gemini", config.GEMINI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GEMINI_API_KEY configurada")
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-lite-preview",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
+    )
+    return response.text
+
+
+# ─── OpenAI GPT-5.4 (usa max_completion_tokens) ──────
+
+def _call_openai_5_4(system_prompt: str, user_prompt: str) -> str:
+    """GPT-5.4 — flagship OpenAI, reasoning e agentes."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="gpt-5.4",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_openai_5_4_mini(system_prompt: str, user_prompt: str) -> str:
+    """GPT-5.4 Mini — coding, computer use, subagents."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="gpt-5.4-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_openai_5_4_nano(system_prompt: str, user_prompt: str) -> str:
+    """GPT-5.4 Nano — mais barato da família 5.4."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="gpt-5.4-nano",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+# ─── OpenAI o-series (reasoning, usa max_completion_tokens) ───
+
+def _call_openai_o3(system_prompt: str, user_prompt: str) -> str:
+    """OpenAI o3 — reasoning profundo."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="o3",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_openai_o3_mini(system_prompt: str, user_prompt: str) -> str:
+    """OpenAI o3-mini — reasoning econômico."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="o3-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_openai_o4_mini(system_prompt: str, user_prompt: str) -> str:
+    """OpenAI o4-mini — reasoning rápido e econômico."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="o4-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+# ─── Grok Reasoning ──────────────────────────────────
+
+def _call_grok_premium_reasoning(system_prompt: str, user_prompt: str) -> str:
+    """Grok 4.20 Reasoning — raciocínio profundo premium."""
+    key = _next_key("grok", config.GROK_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GROK_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
+    response = client.chat.completions.create(
+        model="grok-4.20-0309-reasoning",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_grok_fast_reasoning(system_prompt: str, user_prompt: str) -> str:
+    """Grok 4.1 Fast Reasoning — reasoning econômico."""
+    key = _next_key("grok", config.GROK_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GROK_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
+    response = client.chat.completions.create(
+        model="grok-4-1-fast-reasoning",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_openai_5_4_pro(system_prompt: str, user_prompt: str) -> str:
+    """GPT-5.4 Pro — máxima inteligência OpenAI."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="gpt-5.4-pro",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_openai_o3_pro(system_prompt: str, user_prompt: str) -> str:
+    """OpenAI o3-pro — reasoning premium máximo."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="o3-pro",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_grok_multi_agent(system_prompt: str, user_prompt: str) -> str:
+    """Grok 4.20 Multi-Agent — orquestração de agentes."""
+    key = _next_key("grok", config.GROK_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GROK_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
+    response = client.chat.completions.create(
+        model="grok-4.20-multi-agent-0309",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
 # ─── Cascatas por TIER ────────────────────────────────
 
 
 # TIER 1: IMPRENSA — modelos premium para consolidação analítica
 # Artigos de portais que exigem reescrita profunda, junção de fontes, anti-plágio
 _TIER1_PROVIDERS = [
-    ("openai:gpt-4.1",       _call_openai_premium,   config.OPENAI_KEYS),
-    ("claude:sonnet-4.6",    _call_claude_premium,   config.ANTHROPIC_KEYS),
-    ("grok:grok-4.20",       _call_grok_premium,     config.GROK_KEYS),
-    ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
-    # Fallback para standard se todos premium falharem
-    ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
-    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
+    ("openai:gpt-5.4",        _call_openai_5_4,       config.OPENAI_KEYS),
+    ("openai:gpt-4.1",        _call_openai_premium,   config.OPENAI_KEYS),
+    ("claude:sonnet-4.6",     _call_claude_premium,   config.ANTHROPIC_KEYS),
+    ("gemini:3.1-pro",        _call_gemini3_pro,      config.GEMINI_KEYS),
+    ("grok:grok-4.20",        _call_grok_premium,     config.GROK_KEYS),
+    ("gemini:2.5-pro",        _call_gemini_premium,   config.GEMINI_KEYS),
+    ("qwen:qwen3-max",        _call_qwen3_max,        config.QWEN_KEYS),
+    # Fallback para standard
+    ("gemini:3-flash",        _call_gemini3_flash,    config.GEMINI_KEYS),
+    ("gemini:2.5-flash",      _call_gemini,           config.GEMINI_KEYS),
+    ("deepseek:v3",           _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",      _call_claude_haiku,     config.ANTHROPIC_KEYS),
 ]
 
 # TIER 2: INSTITUCIONAL/GOVERNO — reescrita editorial, menos elaboração
 # Senado, Câmara, Gov.br, STF etc. — tom oficial, reescrita direta
 _TIER2_PROVIDERS = [
-    ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("openai:gpt-4.1-mini",  _call_openai,           config.OPENAI_KEYS),
-    ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
-    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
-    ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
-    ("grok:grok-4.1-fast",   _call_grok_mini,        config.GROK_KEYS),
+    ("gemini:3-flash",        _call_gemini3_flash,    config.GEMINI_KEYS),
+    ("gemini:2.5-flash",      _call_gemini,           config.GEMINI_KEYS),
+    ("openai:gpt-4.1-mini",   _call_openai,           config.OPENAI_KEYS),
+    ("openai:gpt-5.4-mini",   _call_openai_5_4_mini,  config.OPENAI_KEYS),
+    ("deepseek:v3",           _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",      _call_claude_haiku,     config.ANTHROPIC_KEYS),
+    ("qwen:qwen3.5-plus",     _call_qwen35_plus,      config.QWEN_KEYS),
+    ("qwen:plus",             _call_qwen,             config.QWEN_KEYS),
+    ("grok:grok-4.1-fast",    _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # TIER 3: Triagem e tarefas auxiliares — máxima economia
 _TIER3_PROVIDERS = [
-    ("gemini:2.5-flash-lite", _call_gemini_lite,     config.GEMINI_KEYS),
-    ("openai:gpt-4.1-nano",  _call_openai_nano,     config.OPENAI_KEYS),
-    ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
-    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
-    ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
-    ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("grok:grok-4.1-fast",   _call_grok_mini,        config.GROK_KEYS),
+    ("gemini:3.1-flash-lite", _call_gemini3_flash_lite, config.GEMINI_KEYS),
+    ("gemini:2.5-flash-lite", _call_gemini_lite,      config.GEMINI_KEYS),
+    ("openai:gpt-5.4-nano",   _call_openai_5_4_nano,  config.OPENAI_KEYS),
+    ("openai:gpt-4.1-nano",   _call_openai_nano,      config.OPENAI_KEYS),
+    ("deepseek:v3",           _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",      _call_claude_haiku,     config.ANTHROPIC_KEYS),
+    ("qwen:qwen3.5-flash",    _call_qwen35_flash,     config.QWEN_KEYS),
+    ("qwen:plus",             _call_qwen,             config.QWEN_KEYS),
+    ("gemini:2.5-flash",      _call_gemini,           config.GEMINI_KEYS),
+    ("grok:grok-4.1-fast",    _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # TIER CURATOR: Curadoria editorial de HOME — decisões de destaque
@@ -447,14 +794,17 @@ _TIER_CURATOR_PROVIDERS = [
 # Junta múltiplas matérias sobre o mesmo tema em análise original
 # Exige máxima capacidade de síntese e redação jornalística
 _TIER_CONSOLIDATOR_PROVIDERS = [
-    ("claude:opus-4.6",      _call_claude_opus,      config.ANTHROPIC_KEYS),
-    ("claude:sonnet-4.6",    _call_claude_premium,   config.ANTHROPIC_KEYS),
-    ("openai:gpt-4.1",       _call_openai_premium,   config.OPENAI_KEYS),
-    ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
-    ("deepseek:reasoner",    _call_deepseek_reasoner, config.DEEPSEEK_KEYS),
-    ("grok:grok-4.20",       _call_grok_premium,     config.GROK_KEYS),
-    ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:opus-4.6",       _call_claude_opus,       config.ANTHROPIC_KEYS),
+    ("openai:gpt-5.4-pro",    _call_openai_5_4_pro,    config.OPENAI_KEYS),
+    ("claude:sonnet-4.6",     _call_claude_premium,    config.ANTHROPIC_KEYS),
+    ("openai:gpt-4.1",        _call_openai_premium,    config.OPENAI_KEYS),
+    ("gemini:3.1-pro",        _call_gemini3_pro,       config.GEMINI_KEYS),
+    ("gemini:2.5-pro",        _call_gemini_premium,    config.GEMINI_KEYS),
+    ("deepseek:reasoner",     _call_deepseek_reasoner, config.DEEPSEEK_KEYS),
+    ("grok:grok-4.20-reason", _call_grok_premium_reasoning, config.GROK_KEYS),
+    ("grok:grok-4.20",        _call_grok_premium,      config.GROK_KEYS),
+    ("gemini:2.5-flash",      _call_gemini,            config.GEMINI_KEYS),
+    ("deepseek:v3",           _call_deepseek,          config.DEEPSEEK_KEYS),
 ]
 
 # TIER PHOTO EDITOR: Curadoria de imagem jornalística
@@ -471,13 +821,16 @@ _TIER_PHOTO_EDITOR_PROVIDERS = [
 # TIER PHOTO ASSISTANT: Legendas, alt text, créditos — tarefas econômicas
 # Modelos econômicos para geração de texto descritivo curto.
 _TIER_PHOTO_ASSISTANT_PROVIDERS = [
-    ("gemini:2.5-flash-lite", _call_gemini_lite,     config.GEMINI_KEYS),
-    ("openai:gpt-4.1-nano",  _call_openai_nano,     config.OPENAI_KEYS),
-    ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
-    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
-    ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
-    ("grok:grok-4.1-fast",   _call_grok_mini,        config.GROK_KEYS),
+    ("gemini:3.1-flash-lite", _call_gemini3_flash_lite, config.GEMINI_KEYS),
+    ("gemini:2.5-flash-lite", _call_gemini_lite,      config.GEMINI_KEYS),
+    ("openai:gpt-5.4-nano",   _call_openai_5_4_nano,  config.OPENAI_KEYS),
+    ("openai:gpt-4.1-nano",   _call_openai_nano,      config.OPENAI_KEYS),
+    ("deepseek:v3",           _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",      _call_claude_haiku,     config.ANTHROPIC_KEYS),
+    ("qwen:qwen3.5-flash",    _call_qwen35_flash,     config.QWEN_KEYS),
+    ("gemini:2.5-flash",      _call_gemini,           config.GEMINI_KEYS),
+    ("qwen:plus",             _call_qwen,             config.QWEN_KEYS),
+    ("grok:grok-4.1-fast",    _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # Constantes de tier para uso externo

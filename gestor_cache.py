@@ -34,10 +34,21 @@ def carregar_cache():
 
 
 def salvar_no_cache(url):
-
-    """Salva um novo link processado no histórico."""
-
-    with open(ARQUIVO_CACHE, "a", encoding="utf-8") as f:
-
-        f.write(f"{url}\n")
+    """Salva um novo link processado no histórico com rotação (limite 5000)."""
+    # Ler linhas originais para manter a ordem cronológica (FIFO)
+    links = []
+    if os.path.exists(ARQUIVO_CACHE):
+        with open(ARQUIVO_CACHE, "r", encoding="utf-8") as f:
+            links = [l.strip() for l in f if l.strip()]
+    
+    if url not in links:
+        links.append(url)
+    
+    # Rotação: mantém apenas os últimos 5000 (os mais recentes)
+    if len(links) > 5000:
+        links = links[-5000:]
+    
+    with open(ARQUIVO_CACHE, "w", encoding="utf-8") as f:
+        for link in links:
+            f.write(f"{link}\n")
 

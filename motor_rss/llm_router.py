@@ -449,14 +449,18 @@ def generate_article(
 ) -> tuple[dict | None, str]:
     """
     Gera artigo reescrito usando cascata de LLMs do tier apropriado.
-
-    Args:
-        tier: Nível de qualidade (1=Premium, 2=Standard, 3=Economy)
-              Determinado pelo motor com base na fonte/conteúdo.
-
-    Returns:
-        (dados_artigo, nome_llm_usado) ou (None, "") se todos falharem.
     """
+    # ── Budget Check ──────────────────────────────────────
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path("/home/bitnami")))
+    import gestor_budget
+    
+    ok, usage = gestor_budget.check_budget_ok()
+    if not ok:
+        logger.error("BUDGET EXCEDIDO (%d chamadas hoje). Abortando geração.", usage)
+        return None, "budget_limit"
+
     providers = _TIER_MAP.get(tier, _TIER2_PROVIDERS)
 
     system_prompt = config.LLM_SYSTEM_PROMPT
@@ -492,6 +496,9 @@ def generate_article(
                     provider_name, tier,
                 )
                 _cb_record_success(cb_name)
+                # Registrar no budget
+                import gestor_budget
+                gestor_budget.registrar_chamada(provider_name)
                 return data, provider_name
 
             logger.warning("Resposta do %s inválida, tentando próximo.", provider_name)
@@ -527,31 +534,18 @@ def call_llm(
 ) -> tuple[str | dict | None, str]:
     """
     Chamada genérica de LLM para qualquer agente do sistema.
-
-    Uso pelo Home Curator:
-        response, provider = call_llm(
-            system_prompt=CURATOR_SYSTEM_PROMPT,
-            user_prompt=f"Avalie: {titulo}",
-            tier=TIER_CURATOR
-        )
-
-    Uso pelo Consolidated Articles Agent:
-        response, provider = call_llm(
-            system_prompt=CONSOLIDATOR_PROMPT,
-            user_prompt=f"Consolide estas fontes: {fontes}",
-            tier=TIER_CONSOLIDATOR,
-            parse_json=True
-        )
-
-    Args:
-        system_prompt: Instrução de sistema
-        user_prompt: Prompt do usuário
-        tier: TIER_PREMIUM, TIER_STANDARD, TIER_ECONOMY, TIER_CURATOR, TIER_CONSOLIDATOR
-        parse_json: Se True, faz parse do JSON e retorna dict
-
-    Returns:
-        (resposta_texto_ou_dict, nome_provider) ou (None, "") se falhar
     """
+    # ── Budget Check ──────────────────────────────────────
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path("/home/bitnami")))
+    import gestor_budget
+    
+    ok, usage = gestor_budget.check_budget_ok()
+    if not ok:
+        logger.error("BUDGET EXCEDIDO (%d chamadas hoje). Abortando call_llm.", usage)
+        return None, "budget_limit"
+
     providers = _TIER_MAP.get(tier, _TIER2_PROVIDERS)
 
     logger.info("call_llm [TIER %s] — prompt: %s...", tier, user_prompt[:50])
@@ -571,6 +565,10 @@ def call_llm(
             logger.info("LLM %s respondeu em %.1fs", provider_name, elapsed)
 
             _cb_record_success(cb_name)
+            
+            # Registrar no budget
+            import gestor_budget
+            gestor_budget.registrar_chamada(provider_name)
 
             if parse_json:
                 data = _parse_llm_json(raw)

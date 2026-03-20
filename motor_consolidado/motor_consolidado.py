@@ -273,7 +273,15 @@ def main():
         count = run_cycle()
         logger.info("Motor Consolidado finalizado. Artigos publicados: %d", count)
     except Exception as e:
-        logger.critical("ERRO NÃO TRATADO no motor consolidado: %s", e, exc_info=True)
+        logger.critical("ERRO NO MOTOR CONSOLIDADO: %s", e, exc_info=True)
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path("/home/bitnami")))
+        try:
+            from alerta_notificacao import enviar_alerta
+            enviar_alerta(f"ERRO CRÍTICO no Motor Consolidado: {str(e)[:200]}")
+        except:
+            pass
     finally:
         release_lock()
 

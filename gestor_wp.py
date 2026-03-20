@@ -103,17 +103,15 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
             keywords=keywords
         )
         
-        # Se falhar mesmo assim, fallback local da IA DALL-E/Midjourney antiga se aplicável
+        # Fallback local da IA se o curador unificado não encontrou imagem
         if not img_id:
             img_bytes = None
-            if is_oficial:
-                if comando_ia and "USE_ORIGINAL_IMAGE" not in comando_ia.upper():
-                    img_bytes = roteador_ia_imagem(comando_ia)
-            else:
-                if not comando_ia or "USE_ORIGINAL_IMAGE" in comando_ia.upper():
-                    titulo_base = dados.get('h1_title', 'Noticias')
-                    comando_ia = f"Imagem editorial, fotorrealista e de alta qualidade representando: '{titulo_base}'. Sem letras."
-                img_bytes = roteador_ia_imagem(comando_ia)
+            if not comando_ia or "USE_ORIGINAL_IMAGE" in comando_ia.upper():
+                titulo_base = dados.get('h1_title', 'Noticias')
+                comando_ia = f"Imagem editorial, fotorrealista e de alta qualidade representando: '{titulo_base}'. Sem letras."
+            
+            from roteador_ia import roteador_ia_imagem
+            img_bytes = roteador_ia_imagem(comando_ia)
 
             if img_bytes:
                 res_img = requests.post(f"{WP_URL}/media", headers={**AUTH_HEADERS, 'Content-Disposition': 'attachment; filename="capa.jpg"', 'Content-Type': 'image/jpeg'}, data=img_bytes)
@@ -195,9 +193,13 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
 
     res = requests.post(f"{WP_URL}/posts", json=payload, headers=AUTH_HEADERS)
 
-    if res.status_code == 201: print("[OK] Reportagem publicada com sucesso!\n")
-
-    else: print(f"[ERRO WP] {res.text}\n")
+    if res.status_code == 201:
+        post_id = res.json().get('id')
+        print(f"[OK] Reportagem publicada com sucesso! ID: {post_id}\n")
+        return post_id
+    else:
+        print(f"[ERRO WP] {res.text}\n")
+        return None
 
 
 

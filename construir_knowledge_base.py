@@ -571,7 +571,7 @@ def atualizar_post_counts(conn):
         cmd = [
             '/opt/bitnami/mariadb/bin/mariadb',
             '-u', 'bn_wordpress',
-            '-pd0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b',
+            f'-p{os.getenv("DB_PASS")}',
             '-h', '127.0.0.1', '-P', '3306', 'bitnami_wordpress', '-N', '-e',
             "SELECT tt.term_id, tt.count FROM wp_7_term_taxonomy tt WHERE tt.taxonomy='category';"
         ]

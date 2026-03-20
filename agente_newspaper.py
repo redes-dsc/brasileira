@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-WP_DB_PASS = os.getenv("DB_PASS", "d0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b")
+WP_DB_PASS = os.getenv("DB_PASS")
 WP_DB_HOST = '127.0.0.1'
 WP_DB_PORT = '3306'
 WP_DB_NAME = 'bitnami_wordpress'

@@ -171,30 +171,20 @@ def executar_ciclo(caderno):
 
     limite_dias = timedelta(days=7) 
 
+    from deduplicador_unificado import link_ja_processado, registrar_processamento
     links_processados = carregar_cache()
-
     
-
     for fonte in CATALOGO_FONTES[caderno]:
-
         print(f"\n[RSS] Analisando Feed: {fonte['nome']}")
-
         try:
-
             feed = feedparser.parse(fonte['url'])
-
             noticias_selecionadas = 0
-
             for entry in feed.entries:
-
                 if noticias_selecionadas >= 2: break 
-
                 
-
-                if entry.link in links_processados:
-
-                    print(f"  -> [CACHE] Ignorando (jÃ¡ processada): {entry.title[:30]}...")
-
+                # Deduplicação unificada
+                if link_ja_processado(entry.link, entry.title):
+                    print(f"  -> [DEDUPLICADOR] Ignorando (já processado): {entry.title[:30]}...")
                     continue
 
                 
@@ -234,16 +224,10 @@ def executar_ciclo(caderno):
                 
 
                 if materia_final:
-
-                    publicar_no_wordpress(materia_final, autor_id, noticia_bruta['cat_id'], fonte['nome'])
-
-                    salvar_no_cache(entry.link)
-
-                    links_processados.add(entry.link)
-
-                    time.sleep(3) 
-
-                    noticias_selecionadas += 1
+                    post_id = publicar_no_wordpress(materia_final, autor_id, noticia_bruta['cat_id'], fonte['nome'])
+                    if post_id:
+                        registrar_processamento(entry.link, post_id=post_id, feed_name=f"mestre_{caderno}")
+                        noticias_selecionadas += 1
 
                     
 

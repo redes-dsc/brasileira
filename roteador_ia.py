@@ -164,7 +164,9 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
 
 def roteador_ia_imagem(prompt_imagem):
-    return None # [TRAVA EDITORIAL - DALL-E 3 DESATIVADO]
+    import os
+    if os.getenv("ENABLE_AI_IMAGES", "0") != "1":
+        return None # [TRAVA EDITORIAL - DALL-E 3 DESATIVADO VIA ENV]
 
 
     chaves_imagem = [c for c in POOL_CHAVES if c["tipo"] == "openai"]

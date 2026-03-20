@@ -239,6 +239,13 @@ TEMAS_PROIBIDOS = [
     "reality show",
     "bbb",
     "big brother",
+    "horóscopo",
+    "signos",
+    "novela",
+    "resumo de novela",
+    "quem saiu do bbb",
+    "vaza foto",
+    "flagra",
 ]
 
 # ── Prioridade Editorial ────────────────────────────────

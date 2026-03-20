@@ -297,35 +297,20 @@ def calculate_relevance(entry):
 
 
 def deduplicate_entries(entries):
-
-    published_urls = db.get_published_urls_last_24h()
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path("/home/bitnami")))
+    from deduplicador_unificado import link_ja_processado
 
     unique = []
-
     seen_urls = set()
-
     for entry in entries:
-
         url = entry["link"]
-
-        if url in seen_urls or url in published_urls:
-
+        if url in seen_urls or link_ja_processado(url, entry["title"]):
             continue
-
-        if db.post_exists(url, entry["title"]):
-
-            continue
-
         seen_urls.add(url)
-
         unique.append(entry)
-
-    logger.info("Deduplicação: %d entradas → %d únicas", len(entries), len(unique))
-
     return unique
-
-
-
 
 def process_article(entry, categories):
 

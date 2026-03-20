@@ -172,7 +172,7 @@ def _call_grok_premium(system_prompt: str, user_prompt: str) -> str:
     from openai import OpenAI
     client = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
     response = client.chat.completions.create(
-        model="grok-3",
+        model="grok-4.20-0309-non-reasoning",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -293,7 +293,7 @@ def _call_grok_mini(system_prompt: str, user_prompt: str) -> str:
     from openai import OpenAI
     client = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
     response = client.chat.completions.create(
-        model="grok-3-mini",
+        model="grok-4-1-fast-non-reasoning",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -311,7 +311,7 @@ def _call_grok_mini(system_prompt: str, user_prompt: str) -> str:
 _TIER1_PROVIDERS = [
     ("openai:gpt-4o",        _call_openai_premium,  config.OPENAI_KEYS),
     ("claude:sonnet-4",      _call_claude_premium,   config.ANTHROPIC_KEYS),
-    ("grok:grok-3",          _call_grok_premium,     config.GROK_KEYS),
+    ("grok:grok-4.20-0309-non-reasoning",          _call_grok_premium,     config.GROK_KEYS),
     ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
     # Fallback para standard se todos premium falharem
     ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),
@@ -325,7 +325,7 @@ _TIER2_PROVIDERS = [
     ("openai:gpt-4o-mini",   _call_openai,           config.OPENAI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
     ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
-    ("grok:grok-3-mini",     _call_grok_mini,        config.GROK_KEYS),
+    ("grok:grok-4-1-fast-non-reasoning",     _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # TIER 3: Triagem e tarefas auxiliares — máxima economia
@@ -333,7 +333,7 @@ _TIER3_PROVIDERS = [
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
     ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
     ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("grok:grok-3-mini",     _call_grok_mini,        config.GROK_KEYS),
+    ("grok:grok-4-1-fast-non-reasoning",     _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # TIER CURATOR: Curadoria editorial de HOME — decisões de destaque
@@ -354,7 +354,7 @@ _TIER_CONSOLIDATOR_PROVIDERS = [
     ("claude:sonnet-4",      _call_claude_premium,   config.ANTHROPIC_KEYS),
     ("openai:gpt-4o",        _call_openai_premium,   config.OPENAI_KEYS),
     ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
-    ("grok:grok-3",          _call_grok_premium,     config.GROK_KEYS),
+    ("grok:grok-4.20-0309-non-reasoning",          _call_grok_premium,     config.GROK_KEYS),
     ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
 ]
@@ -366,7 +366,7 @@ _TIER_PHOTO_EDITOR_PROVIDERS = [
     ("openai:gpt-4o",        _call_openai_premium,   config.OPENAI_KEYS),
     ("claude:sonnet-4",      _call_claude_premium,   config.ANTHROPIC_KEYS),
     ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
-    ("grok:grok-3",          _call_grok_premium,     config.GROK_KEYS),
+    ("grok:grok-4.20-0309-non-reasoning",          _call_grok_premium,     config.GROK_KEYS),
     ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),  # Fallback econômico (bug 6.1)
 ]
 
@@ -376,7 +376,7 @@ _TIER_PHOTO_ASSISTANT_PROVIDERS = [
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
     ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),
     ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
-    ("grok:grok-3-mini",     _call_grok_mini,        config.GROK_KEYS),
+    ("grok:grok-4-1-fast-non-reasoning",     _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # Constantes de tier para uso externo

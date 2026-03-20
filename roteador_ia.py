@@ -51,7 +51,7 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
                     base_url = "https://api.x.ai/v1"
 
-                    modelo = "grok-3"
+                    modelo = "grok-4.20-0309-non-reasoning"
 
                 elif tipo == "perplexity":
 

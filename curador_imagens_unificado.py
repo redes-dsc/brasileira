@@ -54,6 +54,10 @@ GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", "")
 GOOGLE_API_KEY_CSE = os.getenv("GOOGLE_API_KEY_CSE", "")
 FLICKR_API_KEY = os.getenv("FLICKR_API_KEY", "")
 
+# BunnyCDN (face_crop em produção)
+BUNNY_CDN_HOSTNAME = os.getenv("BUNNY_CDN_HOSTNAME", "")  # ex: brasileira.b-cdn.net
+BUNNY_CDN_ENABLED = bool(BUNNY_CDN_HOSTNAME)
+
 # Domínios Oficiais (Tier 1 & 2)
 OFFICIAL_DOMAINS = ["gov.br", "leg.br", "jus.br", "mp.br", "def.br", "ebc.com.br", "agenciabrasil.ebc.com.br"]
 
@@ -181,23 +185,106 @@ def tier1_scrape_html(html_content: str, source_url: str = "") -> str | None:
 # TIER 2: BANCOS GOVERNAMENTAIS (AGÊNCIA BRASIL, SENADO, CÂMARA)
 # =====================================================================
 
+def _tier2_agencia_brasil(keywords: str) -> str | None:
+    """Busca direta no acervo de fotos da Agência Brasil (EBC)."""
+    if not keywords:
+        return None
+    try:
+        search_url = f"https://agenciabrasil.ebc.com.br/busca?keys={quote_plus(keywords)}&type=foto"
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; BrasileiraNewsBot/1.0)"}
+        resp = requests.get(search_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for img in soup.select(".views-row img, .field-type-image img, article img"):
+                src = img.get("src") or img.get("data-src")
+                if src:
+                    if src.startswith("/"):
+                        src = f"https://agenciabrasil.ebc.com.br{src}"
+                    # Converter thumbnail para imagem grande
+                    src = re.sub(r'/styles/[^/]+/public/', '/files/', src)
+                    if is_valid_image_url(src):
+                        logger.info(f"[TIER 2] Agência Brasil: {src}")
+                        return src
+    except Exception as e:
+        logger.warning(f"[TIER 2] Erro Agência Brasil: {e}")
+    return None
+
+def _tier2_senado_fotos(keywords: str) -> str | None:
+    """Busca no acervo de fotos do Senado Federal (559K+ fotos)."""
+    if not keywords:
+        return None
+    try:
+        api_url = "https://www12.senado.leg.br/noticias/fotos"
+        params = {"SearchableText": keywords}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; BrasileiraNewsBot/1.0)"}
+        resp = requests.get(api_url, params=params, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for img in soup.select(".tileImage, .photoAlbumEntryImage, img[src*='/fotos/']"):
+                src = img.get("src") or img.get("data-src")
+                if src:
+                    if src.startswith("/"):
+                        src = f"https://www12.senado.leg.br{src}"
+                    if is_valid_image_url(src):
+                        logger.info(f"[TIER 2] Senado: {src}")
+                        return src
+    except Exception as e:
+        logger.warning(f"[TIER 2] Erro Senado: {e}")
+    return None
+
+def _tier2_camara_fotos(keywords: str) -> str | None:
+    """Busca na API de fotos da Câmara dos Deputados."""
+    if not keywords:
+        return None
+    try:
+        api_url = "https://www.camara.leg.br/api/v1/busca"
+        params = {"q": keywords, "collection": "imagens", "rows": 3}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; BrasileiraNewsBot/1.0)"}
+        resp = requests.get(api_url, params=params, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+            items = data.get("results", data.get("items", []))
+            for item in items:
+                img_url = item.get("url") or item.get("image_url") or item.get("thumbnail")
+                if img_url and is_valid_image_url(img_url):
+                    logger.info(f"[TIER 2] Câmara: {img_url}")
+                    return img_url
+        # Fallback: scraping da galeria
+        gallery_url = f"https://www.camara.leg.br/internet/bancoimagem/resultadoPesquisa.asp?textoPesquisa={quote_plus(keywords)}"
+        resp = requests.get(gallery_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for img in soup.select("img[src*='bancoimagem'], img[src*='/fotos/']"):
+                src = img.get("src")
+                if src:
+                    if src.startswith("/"):
+                        src = f"https://www.camara.leg.br{src}"
+                    if is_valid_image_url(src):
+                        logger.info(f"[TIER 2] Câmara (gallery): {src}")
+                        return src
+    except Exception as e:
+        logger.warning(f"[TIER 2] Erro Câmara: {e}")
+    return None
+
 def tier2_government_banks(keywords: str) -> str | None:
     """
-    Busca em bancos governamentais utilizando a API robusta do Google Custom Search 
-    restrita aos domínios oficiais (.gov.br, .leg.br, .jus.br, .ebc.com.br).
-    Isso substitui o falho webscraping em HTML e blinda matematicamente o Motor contra
-    as "Latest News" injetadas nas buscas vazias do governo.
+    Busca em bancos governamentais: APIs diretas primeiro, depois Google CSE como fallback.
     """
-    if not GOOGLE_API_KEY_CSE or not GOOGLE_CSE_ID:
-        # Se não houver chave do Google, falha silenciosamente e repassa para TIERs 3
+    if not keywords:
         return None
     
-    if not keywords:
+    # 1. APIs diretas dos acervos governamentais
+    for search_fn in [_tier2_agencia_brasil, _tier2_senado_fotos, _tier2_camara_fotos]:
+        result = search_fn(keywords)
+        if result:
+            return result
+    
+    # 2. Fallback: Google CSE restrito a domínios governamentais
+    if not GOOGLE_API_KEY_CSE or not GOOGLE_CSE_ID:
         return None
         
     try:
         url = "https://www.googleapis.com/customsearch/v1"
-        # Adicionar os filtros implacáveis de portais do governo à sua query
         gov_query = f"{keywords} site:gov.br OR site:leg.br OR site:jus.br OR site:ebc.com.br"
         
         params = {
@@ -214,12 +301,12 @@ def tier2_government_banks(keywords: str) -> str | None:
             for item in data.get("items", []):
                 img_url = item.get("link")
                 if is_valid_image_url(img_url):
-                    logger.info(f"[TIER 2] Imagem limpa extraída via CSE Governamental: {img_url}")
+                    logger.info(f"[TIER 2] Imagem via CSE Governamental: {img_url}")
                     return img_url
                     
-        logger.debug("[TIER 2] CSE: Sem matches visuais estritos nos domínios do governo.")
+        logger.debug("[TIER 2] CSE: Sem matches nos domínios do governo.")
     except Exception as e:
-        logger.warning(f"[TIER 2] Erro na API do CSE Governamental: {e}")
+        logger.warning(f"[TIER 2] Erro CSE Governamental: {e}")
         
     return None
 
@@ -488,14 +575,144 @@ def tier4_stock_apis(keywords: str) -> tuple[str | None, str]:
         except Exception as e:
             logger.warning(f"[TIER 4] Erro Pixabay: {e}")
 
+    # 4. Freepik
+    if FREEPIK_API_KEY:
+        try:
+            res = requests.get(
+                "https://api.freepik.com/v1/resources",
+                params={"term": keywords, "per_page": 1, "filters[orientation]": "landscape", "filters[content_type]": "photo"},
+                headers={"Accept": "application/json", "x-freepik-api-key": FREEPIK_API_KEY},
+                timeout=10
+            )
+            if res.status_code == 200:
+                items = res.json().get("data", [])
+                if items:
+                    img_url = items[0].get("image", {}).get("source", {}).get("url")
+                    if not img_url:
+                        img_url = items[0].get("url") or items[0].get("preview", {}).get("url")
+                    if img_url and is_valid_image_url(img_url):
+                        logger.info(f"[TIER 4] Imagem Freepik encontrada")
+                        return img_url, "Foto via Freepik"
+        except Exception as e:
+            logger.warning(f"[TIER 4] Erro Freepik: {e}")
+
     return None, ""
+
+# =====================================================================
+# VALIDAÇÃO MULTIMODAL DE IMAGEM (LLM com visão)
+# =====================================================================
+
+def validar_imagem_multimodal(image_data: bytes, titulo: str) -> tuple[bool, str]:
+    """
+    Envia a imagem candidata a um LLM multimodal para validar relevância contextual.
+    Retorna (aprovada, motivo).
+    """
+    if len(image_data) < 5000:
+        return True, "imagem muito pequena para validação"
+    
+    try:
+        import base64
+        img_b64 = base64.b64encode(image_data).decode("utf-8")
+        
+        # Limitar tamanho do base64 para economia (~200KB max)
+        if len(img_b64) > 300_000:
+            # Redimensionar antes de enviar
+            from io import BytesIO
+            from PIL import Image
+            img = Image.open(BytesIO(image_data))
+            img.thumbnail((400, 400))
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=60)
+            img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        
+        # Tentar Gemini multimodal (mais econômico para validação visual)
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
+        if not gemini_key:
+            # Fallback: tentar via config
+            import config
+            keys = getattr(config, "GEMINI_KEYS", [])
+            if keys:
+                gemini_key = keys[0]
+        
+        if not gemini_key:
+            return True, "sem chave Gemini para validação visual"
+        
+        prompt = f"""Analise esta imagem como Editor de Fotografia de um portal jornalístico brasileiro.
+
+NOTÍCIA: {titulo}
+
+A imagem é ADEQUADA para ilustrar esta notícia? Considere:
+1. Relevância temática (a imagem combina com o assunto?)
+2. Qualidade visual (não é logo, banner, ícone, ou imagem genérica demais?)
+3. Respeito editorial (não é ofensiva, violenta, ou inadequada?)
+
+Responda APENAS com: APROVADA ou REJEITADA
+Seguido de uma justificativa curta em 1 linha."""
+
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}",
+            json={
+                "contents": [{
+                    "parts": [
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
+                    ]
+                }],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 80}
+            },
+            timeout=15
+        )
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            text = text.strip()
+            
+            if text.upper().startswith("REJEITADA"):
+                motivo = text.split("\n")[0] if "\n" in text else text
+                logger.info(f"[Multimodal] REJEITADA: {motivo}")
+                return False, motivo
+            else:
+                logger.info(f"[Multimodal] APROVADA")
+                return True, "aprovada pelo LLM"
+        else:
+            logger.debug(f"[Multimodal] API falhou ({resp.status_code}), aprovando por fallback")
+            
+    except Exception as e:
+        logger.debug(f"[Multimodal] Validação falhou, aprovando por fallback: {e}")
+    
+    return True, "fallback (validação indisponível)"
+
+
+# =====================================================================
+# BunnyCDN Face Crop URL
+# =====================================================================
+
+def bunny_cdn_face_crop_url(original_url: str, width: int = 1200, height: int = 675) -> str:
+    """
+    Gera URL do BunnyCDN com face_crop automático para produção.
+    Se BunnyCDN não estiver configurado, retorna a URL original.
+    """
+    if not BUNNY_CDN_ENABLED:
+        return original_url
+    
+    # Extrair caminho da imagem do WP
+    from urllib.parse import urlparse
+    parsed = urlparse(original_url)
+    path = parsed.path
+    
+    # Construir URL CDN com parâmetros de otimização
+    cdn_url = f"https://{BUNNY_CDN_HOSTNAME}{path}?width={width}&height={height}&crop_gravity=face&quality=85"
+    logger.info(f"[BunnyCDN] Face crop URL: {cdn_url[:80]}...")
+    return cdn_url
+
 
 # =====================================================================
 # UPLOAD PARA WORDPRESS
 # =====================================================================
 
 def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", caption: str = "") -> int | None:
-    """Baixa de `image_url`, aplica SmartCrop (1200x675) com detecção facial e sobe pro WP."""
+    """Baixa de `image_url`, valida via LLM multimodal, aplica SmartCrop (1200x675) e sobe pro WP."""
     try:
         # Anti-repetição: verificar se imagem já foi usada
         try:
@@ -511,6 +728,12 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
         content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
         image_data = resp.content
         if len(image_data) < 1000: return None
+        
+        # Validação multimodal: enviar imagem ao LLM para verificar relevância
+        aprovada, motivo = validar_imagem_multimodal(image_data, alt_text or filename)
+        if not aprovada:
+            logger.info(f"[Upload] Imagem REJEITADA pelo LLM multimodal: {motivo}")
+            return None
 
         # --- CROP 16:9 com detecção facial ---
         try:

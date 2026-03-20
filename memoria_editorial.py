@@ -123,14 +123,40 @@ def _save_image_catalog(entries):
     except Exception as e:
         print(f"[CATALOGO_IMG] Erro ao salvar: {e}")
 
+def _text_to_embedding(text: str) -> list[float]:
+    """
+    Gera embedding lightweight via TF-IDF simplificado (sem dependência externa).
+    Vetor de 64 dimensões normalizado para cosseno rápido.
+    """
+    import hashlib, math
+    text = text.lower().strip()
+    words = text.split()
+    vec = [0.0] * 64
+    for word in words:
+        # Hash determinístico da palavra → posição no vetor
+        h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+        idx = h % 64
+        vec[idx] += 1.0
+    # Normalizar L2
+    norm = math.sqrt(sum(v*v for v in vec))
+    if norm > 0:
+        vec = [v / norm for v in vec]
+    return vec
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosseno entre dois vetores normalizados."""
+    return sum(x*y for x, y in zip(a, b))
+
 def registrar_imagem(url, titulo="", media_id=None, fonte_tier=""):
-    """Registra uma imagem publicada no catálogo."""
+    """Registra uma imagem publicada no catálogo com embedding do título."""
     entries = _load_image_catalog()
+    embedding = _text_to_embedding(titulo) if titulo else []
     entries.append({
         "url": url,
         "titulo": titulo,
         "media_id": media_id,
         "fonte_tier": fonte_tier,
+        "embedding": embedding,
         "timestamp": datetime.now().isoformat(),
     })
     _save_image_catalog(entries)
@@ -142,7 +168,6 @@ def imagem_ja_usada(url, horas=72):
     entries = _load_image_catalog()
     cutoff = datetime.now() - timedelta(hours=horas)
     
-    # Normalizar URL (remover query params desnecessários)
     from urllib.parse import urlparse, urlunparse
     parsed = urlparse(url)
     url_clean = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
@@ -160,4 +185,43 @@ def imagem_ja_usada(url, horas=72):
             continue
     
     return False
+
+def buscar_imagem_similar(titulo: str, limite_similaridade: float = 0.7, horas: int = 168) -> dict | None:
+    """
+    Busca no catálogo uma imagem publicada com título similar (via embedding).
+    Retorna a entrada do catálogo mais similar ou None.
+    Útil para reusar imagens de notícias do mesmo tema.
+    """
+    if not titulo:
+        return None
+    
+    entries = _load_image_catalog()
+    if not entries:
+        return None
+    
+    cutoff = datetime.now() - timedelta(hours=horas)
+    query_emb = _text_to_embedding(titulo)
+    
+    melhor_score = 0.0
+    melhor_entry = None
+    
+    for entry in reversed(entries):
+        try:
+            ts = datetime.fromisoformat(entry["timestamp"])
+            if ts < cutoff:
+                break
+            entry_emb = entry.get("embedding", [])
+            if not entry_emb or len(entry_emb) != 64:
+                continue
+            score = _cosine_similarity(query_emb, entry_emb)
+            if score > melhor_score and score >= limite_similaridade:
+                melhor_score = score
+                melhor_entry = entry
+        except Exception:
+            continue
+    
+    if melhor_entry:
+        print(f"[CATALOGO_IMG] Imagem similar encontrada (score={melhor_score:.2f}): {melhor_entry.get('titulo', '')[:50]}")
+    
+    return melhor_entry
 

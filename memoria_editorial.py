@@ -97,3 +97,67 @@ def categorias_com_gap(horas=12, min_cobertura=2):
         if cobertura.get(cat, 0) < min_cobertura:
             gaps.append((cat, cobertura.get(cat, 0)))
     return gaps
+
+# =====================================================================
+# CATÁLOGO DE IMAGENS (Anti-Repetição)
+# =====================================================================
+
+IMAGE_CATALOG_FILE = Path("/home/bitnami/catalogo_imagens.json")
+MAX_IMAGE_ENTRIES = 1000
+
+def _load_image_catalog():
+    if not IMAGE_CATALOG_FILE.exists():
+        return []
+    try:
+        with open(IMAGE_CATALOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _save_image_catalog(entries):
+    try:
+        if len(entries) > MAX_IMAGE_ENTRIES:
+            entries = entries[-MAX_IMAGE_ENTRIES:]
+        with open(IMAGE_CATALOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(entries, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[CATALOGO_IMG] Erro ao salvar: {e}")
+
+def registrar_imagem(url, titulo="", media_id=None, fonte_tier=""):
+    """Registra uma imagem publicada no catálogo."""
+    entries = _load_image_catalog()
+    entries.append({
+        "url": url,
+        "titulo": titulo,
+        "media_id": media_id,
+        "fonte_tier": fonte_tier,
+        "timestamp": datetime.now().isoformat(),
+    })
+    _save_image_catalog(entries)
+
+def imagem_ja_usada(url, horas=72):
+    """Verifica se uma imagem já foi usada nas últimas N horas."""
+    if not url:
+        return False
+    entries = _load_image_catalog()
+    cutoff = datetime.now() - timedelta(hours=horas)
+    
+    # Normalizar URL (remover query params desnecessários)
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(url)
+    url_clean = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+    
+    for entry in reversed(entries):
+        try:
+            ts = datetime.fromisoformat(entry["timestamp"])
+            if ts < cutoff:
+                break
+            entry_parsed = urlparse(entry.get("url", ""))
+            entry_clean = urlunparse((entry_parsed.scheme, entry_parsed.netloc, entry_parsed.path, "", "", ""))
+            if url_clean == entry_clean:
+                return True
+        except Exception:
+            continue
+    
+    return False
+

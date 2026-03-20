@@ -495,18 +495,28 @@ def tier4_stock_apis(keywords: str) -> tuple[str | None, str]:
 # =====================================================================
 
 def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", caption: str = "") -> int | None:
-    """Baixa de `image_url`, aplica SmartCrop (1200x675) nativo e sobe pro WP, atualizando metadados."""
+    """Baixa de `image_url`, aplica SmartCrop (1200x675) com detecção facial e sobe pro WP."""
     try:
+        # Anti-repetição: verificar se imagem já foi usada
+        try:
+            from memoria_editorial import imagem_ja_usada, registrar_imagem
+            if imagem_ja_usada(image_url):
+                logger.info(f"[Upload] Imagem já usada nas últimas 72h, pulando: {image_url[:80]}")
+                return None
+        except ImportError:
+            pass
+
         resp = requests.get(image_url, timeout=config.HTTP_TIMEOUT, stream=True)
         if resp.status_code != 200: return None
         content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
         image_data = resp.content
         if len(image_data) < 1000: return None
 
-        # --- CROP 16:9 (PIL puro — rápido e confiável) ---
+        # --- CROP 16:9 com detecção facial ---
         try:
             from io import BytesIO
             from PIL import Image
+            import numpy as np
             
             img = Image.open(BytesIO(image_data))
             if img.mode not in ('RGB', 'RGBA'):
@@ -519,18 +529,45 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
             w, h = img.size
             logger.info(f"[Upload] Imagem original: {w}x{h}, {len(image_data)} bytes")
             
-            # Center-crop para 16:9 e resize para 1200x675
             if w >= 200 and h >= 112:
                 target_ratio = 16 / 9
                 current_ratio = w / h
+                
+                # Tentar detecção facial para crop inteligente
+                face_center_y = None
+                try:
+                    import cv2
+                    img_array = np.array(img)
+                    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+                    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                    
+                    if len(faces) > 0:
+                        # Centralizar no rosto mais proeminente (maior área)
+                        largest_face = max(faces, key=lambda f: f[2] * f[3])
+                        fx, fy, fw, fh = largest_face
+                        face_center_y = fy + fh // 2
+                        logger.info(f"[Upload] Rosto detectado em ({fx},{fy},{fw}x{fh})")
+                except Exception as e:
+                    logger.debug(f"[Upload] OpenCV não disponível ou falhou: {e}")
+                
+                # Crop com consciência facial
                 if current_ratio > target_ratio:
+                    # Imagem muito larga → crop horizontal (center)
                     new_w = int(h * target_ratio)
                     left = (w - new_w) // 2
                     img = img.crop((left, 0, left + new_w, h))
                 else:
+                    # Imagem muito alta → crop vertical (face-aware)
                     new_h = int(w / target_ratio)
-                    top = (h - new_h) // 2
+                    if face_center_y is not None:
+                        # Centralizar no rosto, com limites
+                        top = max(0, min(face_center_y - new_h // 2, h - new_h))
+                    else:
+                        # Fallback: crop no terço superior (mais provável ter o sujeito)
+                        top = max(0, (h - new_h) // 3)
                     img = img.crop((0, top, w, top + new_h))
+                
                 img = img.resize((1200, 675), Image.Resampling.LANCZOS)
             
             buffer = BytesIO()
@@ -561,6 +598,13 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
         if up_resp.status_code in (200, 201):
             media_id = up_resp.json().get("id")
             logger.info(f"Imagem uploaded sucesso: media_id={media_id}")
+            
+            # Registrar no catálogo anti-repetição
+            try:
+                from memoria_editorial import registrar_imagem
+                registrar_imagem(image_url, titulo=alt_text, media_id=media_id)
+            except Exception:
+                pass
             
             # Postar meta: alt_text e caption
             meta_payload = {}
@@ -624,58 +668,81 @@ def get_best_image_for_post(
     # Cérebro IA (Gemini): Gerar as melhores queries de busca OU usar explicitas vindas do Sintetizador
     if explicit_gov_query or explicit_commons_query or explicit_block_stock is not None:
         logger.info("[Curador] Usando queries EXPLICITAS fornecidas pela Redação IA.")
-        query_gov = explicit_gov_query or title[:50]
-        query_commons = explicit_commons_query or title[:50]
-        query_stock = explicit_stock_query or "News background"
+        query_gov = [explicit_gov_query or title[:50]]
+        query_commons = [explicit_commons_query or title[:50]]
+        query_stock = [explicit_stock_query or "News background"]
         block_stock = explicit_block_stock if explicit_block_stock is not None else False
     else:
         logger.info("[Curador] Nenhuma query explicita fornecida, acionando fallback IA Gemini")
         if _query_generator is None: # Ensure generator is initialized if not already
             _query_generator = get_query_generator()
         tier_queries = _query_generator._generate_ai_queries(title, html_content, category)
-        query_gov = tier_queries.get("gov_pt", title[:50])
-        query_commons = tier_queries.get("commons", title[:50])
-        query_stock = tier_queries.get("stock_en", "Brazil news")
-        block_stock = tier_queries.get("block_stock", False)
+        if tier_queries:
+            query_gov = tier_queries.get("gov_pt", [title[:50]])
+            query_commons = tier_queries.get("commons", [title[:50]])
+            query_stock = tier_queries.get("stock_en", ["Brazil news"])
+            block_stock = tier_queries.get("block_stock", False)
+        else:
+            # Fallback to default queries
+            default_queries = _query_generator._build_default_queries(category, _query_generator._extract_key_entities(title, html_content), title)
+            query_gov = [default_queries.get("gov_pt", title[:50])]
+            query_commons = [default_queries.get("commons", title[:50])]
+            query_stock = [default_queries.get("stock_en", "Brazil news")]
+            block_stock = False
     
-    logger.info(f"[Queries] GOV/LIVRE: {query_gov}")
+    # Normalizar para listas (backward compat com strings simples)
+    if isinstance(query_gov, str): query_gov = [query_gov]
+    if isinstance(query_commons, str): query_commons = [query_commons]
+    if isinstance(query_stock, str): query_stock = [query_stock]
+    
+    logger.info(f"[Queries] GOV: {query_gov}")
     logger.info(f"[Queries] COMMONS: {query_commons}")
     logger.info(f"[Queries] STOCK: {query_stock}")
     logger.info(f"[Queries] BLOCK_STOCK: {block_stock}")
 
-    # TIER 2: Bancos do Governo (Tentar SEMPRE ANTES para assuntos sérios para pregar oficialidade, com fallback para geral)
-    tier2_url = tier2_government_banks(query_gov)
-    if tier2_url:
-        media_id = upload_to_wordpress(tier2_url, safe_filename, alt_text=title, caption="Foto: Agência Governo / Senado / Livre Reprodução")
-        if media_id: return media_id
+    # TIER 2: Bancos do Governo — tentar cada nível de query
+    for q in query_gov:
+        tier2_url = tier2_government_banks(q)
+        if tier2_url:
+            media_id = upload_to_wordpress(tier2_url, safe_filename, alt_text=title, caption="Foto: Agência Governo / Senado / Livre Reprodução")
+            if media_id: return media_id
+        logger.debug(f"[TIER 2] Nenhum resultado para: {q}")
 
-    # TIER 3C: Buscador Aberto Livres (Google CSE Imagens Abertas). Tentamos na web aberta ANTES do stock, fornercendo fotos cirúrgicas!
-    tier3c_url = tier3c_google_cse(query_gov)
-    if tier3c_url:
-        media_id = upload_to_wordpress(tier3c_url, safe_filename, alt_text=title, caption="Foto: Reprodução / Banco de Imagens Web (Domínio Público)")
-        if media_id: return media_id
+    # TIER 3C: Google CSE Imagens Abertas — tentar cada nível
+    for q in query_gov:
+        tier3c_url = tier3c_google_cse(q)
+        if tier3c_url:
+            media_id = upload_to_wordpress(tier3c_url, safe_filename, alt_text=title, caption="Foto: Reprodução / Banco de Imagens Web (Domínio Público)")
+            if media_id: return media_id
+        logger.debug(f"[TIER 3C] Nenhum resultado para: {q}")
 
-    # TIER 3A: Flickr Governamental/Institucional
-    tier3a_url = tier3a_flickr_gov(query_gov)
-    if tier3a_url:
-        media_id = upload_to_wordpress(tier3a_url, safe_filename, alt_text=title, caption="Foto: Flickr Gov / C.C.")
-        if media_id: return media_id
+    # TIER 3A: Flickr Governamental/Institucional — tentar cada nível
+    for q in query_gov:
+        tier3a_url = tier3a_flickr_gov(q)
+        if tier3a_url:
+            media_id = upload_to_wordpress(tier3a_url, safe_filename, alt_text=title, caption="Foto: Flickr Gov / C.C.")
+            if media_id: return media_id
+        logger.debug(f"[TIER 3A] Nenhum resultado para: {q}")
 
-    # TIER 3B: Wikimedia/Wikipedia (O melhor para identificar estádios, clubes, e rostos específicos)
-    tier3b_url = tier3b_wikimedia(query_commons)
-    if tier3b_url:
-        media_id = upload_to_wordpress(tier3b_url, safe_filename, alt_text=title, caption="Imagem sob Licença C.C. via Wikimedia Commons")
-        if media_id: return media_id
+    # TIER 3B: Wikimedia/Wikipedia — tentar cada nível
+    for q in query_commons:
+        tier3b_url = tier3b_wikimedia(q)
+        if tier3b_url:
+            media_id = upload_to_wordpress(tier3b_url, safe_filename, alt_text=title, caption="Imagem sob Licença C.C. via Wikimedia Commons")
+            if media_id: return media_id
+        logger.debug(f"[TIER 3B] Nenhum resultado para: {q}")
 
     # TIER 4: Stock API (Unsplash/Pexels) - GATILHO CAUTELAR
     category_blocks = ["politica", "justica", "esportes", "celebridades"]
     if category in category_blocks or block_stock:
         logger.info(f"[TIER 4] Stock bloqueado para a categoria '{category}' ou pela flag BLOCK_STOCK={block_stock} (Prevenção de fotos incorretas).")
     else:
-        tier4_url, tier4_credit = tier4_stock_apis(query_stock)
-        if tier4_url:
-            media_id = upload_to_wordpress(tier4_url, safe_filename, alt_text=title, caption=tier4_credit)
-            if media_id: return media_id
+        for q in query_stock:
+            tier4_url, tier4_credit = tier4_stock_apis(q)
+            if tier4_url:
+                media_id = upload_to_wordpress(tier4_url, safe_filename, alt_text=title, caption=tier4_credit)
+                if media_id: return media_id
+            logger.debug(f"[TIER 4] Nenhum resultado para: {q}")
 
     # TIER 5: Placeholder TIER
     logger.info("Todos os Tiers falharam. Usando imagem placeholder de fallback.")
@@ -988,46 +1055,58 @@ class ImageQueryGenerator:
         }
     
     def _generate_ai_queries(self, title: str, content: str, category: str) -> dict | None:
-        """Usa Gemini para gerar queries otimizadas."""
+        """Usa Gemini para gerar queries otimizadas com 3 níveis de especificidade."""
         
         prompt = f"""Você é o Editor de Fotografia Chefe de um portal de notícias do Brasil.
 
-EXTRAIA AS ENTIDADES VISUAIS PRINCIPAIS (Pessoas chaves, clubes, instituições ou locais críticos) da notícia para buscar fotos em bancos de imagens.
-Foque em gerar buscas ABRANGENTES, PRECISAS E FLEXÍVEIS. 
-Menos é mais: NUNCA use ações específicas, sentimentos ou eventos restritivos (como "entrevista", "discurso", "conflito", "vitória", "celebrando", "troféu") pois isso zera os resultados em bancos oficiais. Foque APENAS em nomes de pessoas, locais ou organizações. Use os nomes mais curtos e populares (ex: use "Lula" ao invés de "Luiz Inácio Lula da Silva").
+EXTRAIA AS ENTIDADES VISUAIS PRINCIPAIS da notícia para buscar fotos em bancos de imagens.
+Gere queries em 3 NÍVEIS DE ESPECIFICIDADE para cada tier, do mais preciso ao mais genérico.
+Isso permite encontrar a melhor imagem possível: se a busca mais específica falhar, tentamos a média, depois a genérica.
+
+EXEMPLO REAL: Notícia "Lula faz declaração contra medida tomada pelo BC"
+- QUERY_GOV_1: "Lula" AND "Banco Central" (foto do evento específico)
+- QUERY_GOV_2: "Lula" (foto do presidente em qualquer contexto)
+- QUERY_GOV_3: "Banco Central" OR "Brasília" (foto institucional genérica)
+
+REGRAS:
+- NUNCA use ações/sentimentos ("discurso", "conflito", "celebrando") — zera resultados
+- Use nomes curtos e populares ("Lula", não "Luiz Inácio Lula da Silva")
+- Use aspas e operadores booleanos (AND, OR)
 
 NOTÍCIA PARA ILUSTRAR:
 Título: {title}
 Conteúdo: {content[:1500]}
 Categoria detectada: {category}
 
-TAREFA: Gerar 3 queries de busca de imagens e uma flag.
+TAREFA: Gerar queries escaladas + flag.
 
-1. **QUERY_GOV** (Google Busca de Imagens Livres e Flickr):
-   - Em português. Foque apenas nas entidades estritas.
-   - Use aspas (`"`) para termos exatos e operadores booleanos (`OR`, `AND`).
-   - Exemplo BOM: `"Lula" AND "Banco Central"`
-   - Exemplo BOM: `"Vasco" AND "Fluminense"`
-   - Exemplo BOM: `"Moise Kouame" AND "tênis"`
-   - NUNCA adicione "futebol", "jogo", "entrevista", "discurso". Limite-se aos nomes.
+1. **QUERY_GOV** (3 níveis — Google Imagens + Flickr, em português):
+   - _1: Combinação específica das entidades principais
+   - _2: Entidade principal isolada
+   - _3: Contexto institucional/geográfico genérico
 
-2. **QUERY_COMMONS** (para o acervo Wiki Commons):
-   - Nomes muito específicos para a Wikipedia.
-   - Exemplo BOM: `"Neo Química Arena"` OR `"Supremo Tribunal Federal"` OR `"Lula"`.
+2. **QUERY_COMMONS** (3 níveis — Wikimedia Commons):
+   - _1: Nome específico da pessoa/instituição/local
+   - _2: Instituição ou local relacionado
+   - _3: Categoria temática genérica
 
-3. **QUERY_STOCK** (para Unsplash/Pexels em INGLÊS):
-   - Apenas para ilustrações genéricas (conceitos abstratos).
-   - Exemplo BOM: `"Brazilian currency" AND "economy"`.
-   - NUNCA use "money" sozinho. Se a notícia for sobre pessoas reais, esta query será ignorada se BLOCK_STOCK for TRUE.
+3. **QUERY_STOCK** (3 níveis — Unsplash/Pexels em INGLÊS):
+   - _1: Conceito específico
+   - _2: Conceito médio
+   - _3: Conceito muito genérico
 
-4. **BLOCK_STOCK**:
-   - `TRUE` se a notícia cita pessoas específicas, clubes de futebol (Vasco, Lyon), instituições específicas precisando de foto real, nomes de políticos, tenistas, etc.
-   - `FALSE` se a imagem puder ser genérica abstrata (ex: vacinação no brasil geral, inflação genérica).
+4. **BLOCK_STOCK**: TRUE se precisa de foto real (pessoas, clubes, instituições); FALSE se pode ser genérica.
 
 Responda APENAS no formato:
-QUERY_GOV: [sua query]
-QUERY_COMMONS: [sua query]
-QUERY_STOCK: [sua query]
+QUERY_GOV_1: [query]
+QUERY_GOV_2: [query]
+QUERY_GOV_3: [query]
+QUERY_COMMONS_1: [query]
+QUERY_COMMONS_2: [query]
+QUERY_COMMONS_3: [query]
+QUERY_STOCK_1: [query]
+QUERY_STOCK_2: [query]
+QUERY_STOCK_3: [query]
 BLOCK_STOCK: [TRUE ou FALSE]"""
 
         try:
@@ -1037,7 +1116,7 @@ BLOCK_STOCK: [TRUE ou FALSE]"""
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
                         "temperature": 0.4,
-                        "maxOutputTokens": 200,
+                        "maxOutputTokens": 400,
                     }
                 },
                 timeout=20
@@ -1047,31 +1126,32 @@ BLOCK_STOCK: [TRUE ou FALSE]"""
                 data = resp.json()
                 text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                 
-                # Parse response
                 queries = {}
                 
-                gov_match = re.search(r"QUERY_GOV:\s*(.+?)(?:\n|$)", text)
-                if gov_match:
-                    queries["gov_pt"] = self._clean_query(gov_match.group(1))
-                
-                commons_match = re.search(r"QUERY_COMMONS:\s*(.+?)(?:\n|$)", text)
-                if commons_match:
-                    queries["commons"] = self._clean_query(commons_match.group(1))
-                
-                stock_match = re.search(r"QUERY_STOCK:\s*(.+?)(?:\n|$)", text)
-                if stock_match:
-                    queries["stock_en"] = self._clean_query(stock_match.group(1))
+                # Parse 3 levels for each tier
+                for tier_key, output_key in [("QUERY_GOV", "gov_pt"), ("QUERY_COMMONS", "commons"), ("QUERY_STOCK", "stock_en")]:
+                    levels = []
+                    for level in range(1, 4):
+                        match = re.search(rf"{tier_key}_{level}:\s*(.+?)(?:\n|$)", text)
+                        if match:
+                            levels.append(self._clean_query(match.group(1)))
+                    if levels:
+                        queries[output_key] = levels
+                    
+                # Fallback: parse old single-query format for backward compat
+                if not queries:
+                    for key, pattern in [("gov_pt", "QUERY_GOV"), ("commons", "QUERY_COMMONS"), ("stock_en", "QUERY_STOCK")]:
+                        match = re.search(rf"{pattern}:\s*(.+?)(?:\n|$)", text)
+                        if match:
+                            queries[key] = [self._clean_query(match.group(1))]
                 
                 block_stock_match = re.search(r"BLOCK_STOCK:\s*(TRUE|FALSE)", text, re.I)
-                if block_stock_match:
-                    queries["block_stock"] = block_stock_match.group(1).upper() == "TRUE"
-                else:
-                    queries["block_stock"] = False
+                queries["block_stock"] = block_stock_match.group(1).upper() == "TRUE" if block_stock_match else False
                 
                 if len(queries) >= 2:
-                    logger.info(f"[AI Queries] gov_pt: {queries.get('gov_pt', 'N/A')}")
-                    logger.info(f"[AI Queries] commons: {queries.get('commons', 'N/A')}")
-                    logger.info(f"[AI Queries] stock_en: {queries.get('stock_en', 'N/A')}")
+                    for key in ["gov_pt", "commons", "stock_en"]:
+                        vals = queries.get(key, [])
+                        logger.info(f"[AI Queries] {key}: {vals}")
                     logger.info(f"[AI Queries] block_stock: {queries.get('block_stock', False)}")
                     return queries
                     

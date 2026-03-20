@@ -62,7 +62,7 @@ BUNNY_CDN_ENABLED = bool(BUNNY_CDN_HOSTNAME)
 OFFICIAL_DOMAINS = ["gov.br", "leg.br", "jus.br", "mp.br", "def.br", "ebc.com.br", "agenciabrasil.ebc.com.br"]
 
 # Placeholder fallback (Tier 5)
-PLACEHOLDER_IMAGE_URL = os.getenv("PLACEHOLDER_IMAGE_URL", "https://brasileira.news/wp-content/uploads/2023/10/placeholder-brasileiranews.jpg")
+PLACEHOLDER_IMAGE_URL = os.getenv("PLACEHOLDER_IMAGE_URL", "https://brasileira.news/wp-content/uploads/sites/7/2026/02/imagem-brasileira.png")
 
 # =====================================================================
 # FUNÇÕES UTILITÁRIAS

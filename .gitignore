@@ -1,0 +1,57 @@
+# Bitnami/System
+bitnami_application_password
+bitnami_credentials
+.bash_history
+.selected_editor
+.sudo_as_admin_successful
+.gitlab/
+stack
+htdocs
+bitnami_application_password
+bitnami_credentials
+
+# Environment/Secrets
+.env
+config_chaves.py
+bitnami_application_password
+bitnami_credentials
+
+# Virtual Environment
+venv/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+log_do_motor.txt*
+log_mestre.txt
+log_scrapers.txt*
+logs/
+historico_links.txt
+
+# Backups and Temporary files
+backups_adsense/
+backup_integral_robos.txt
+homepage_tdc_*.txt
+dados_*.py
+*.db
+*.json
+!controle_auditoria.json
+
+# Agents/Internal
+.agent/
+.antigravity-server/
+.gemini/
+.claude/
+.config/
+.local/
+.qoder/
+.qoder-server/
+.cache/
+.claude/
+.gemini/
+.qoder/
+.qoder-server/
+.antigravity-server/

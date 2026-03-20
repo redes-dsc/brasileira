@@ -260,6 +260,78 @@ def _call_deepseek(system_prompt: str, user_prompt: str) -> str:
     return response.choices[0].message.content
 
 
+# ─── Providers ADICIONAIS (catálogo completo) ─────────
+
+def _call_deepseek_reasoner(system_prompt: str, user_prompt: str) -> str:
+    """DeepSeek-V3.2 Reasoner (Thinking Mode) — raciocínio profundo."""
+    key = _next_key("deepseek", config.DEEPSEEK_KEYS)
+    if not key:
+        raise ValueError("Nenhuma DEEPSEEK_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
+    response = client.chat.completions.create(
+        model="deepseek-reasoner",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_claude_opus(system_prompt: str, user_prompt: str) -> str:
+    """Claude Opus 4.6 — modelo mais inteligente da Anthropic (1M context)."""
+    key = _next_key("claude", config.ANTHROPIC_KEYS)
+    if not key:
+        raise ValueError("Nenhuma ANTHROPIC_API_KEY configurada")
+    import anthropic
+    client = anthropic.Anthropic(api_key=key, timeout=config.LLM_TIMEOUT)
+    response = client.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=4096,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+    return response.content[0].text
+
+
+def _call_claude_haiku(system_prompt: str, user_prompt: str) -> str:
+    """Claude Haiku 4.5 — mais rápido da Anthropic, near-frontier."""
+    key = _next_key("claude", config.ANTHROPIC_KEYS)
+    if not key:
+        raise ValueError("Nenhuma ANTHROPIC_API_KEY configurada")
+    import anthropic
+    client = anthropic.Anthropic(api_key=key, timeout=config.LLM_TIMEOUT)
+    response = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=4096,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+    return response.content[0].text
+
+
+def _call_openai_nano(system_prompt: str, user_prompt: str) -> str:
+    """GPT-4.1 Nano — mais barato da OpenAI, bom para tarefas simples."""
+    key = _next_key("openai", config.OPENAI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma OPENAI_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(api_key=key)
+    response = client.chat.completions.create(
+        model="gpt-4.1-nano",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
 # ─── Providers (modelos ECONOMY — TIER 3) ────────────
 # Usados para triagem, classificação, tarefas auxiliares
 
@@ -304,33 +376,57 @@ def _call_grok_mini(system_prompt: str, user_prompt: str) -> str:
     return response.choices[0].message.content
 
 
+def _call_gemini_lite(system_prompt: str, user_prompt: str) -> str:
+    """Gemini 2.5 Flash-Lite — mais rápido e barato do Google."""
+    key = _next_key("gemini", config.GEMINI_KEYS)
+    if not key:
+        raise ValueError("Nenhuma GEMINI_API_KEY configurada")
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-lite",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
+    )
+    return response.text
+
+
 # ─── Cascatas por TIER ────────────────────────────────
+
 
 # TIER 1: IMPRENSA — modelos premium para consolidação analítica
 # Artigos de portais que exigem reescrita profunda, junção de fontes, anti-plágio
 _TIER1_PROVIDERS = [
-    ("openai:gpt-4.1",       _call_openai_premium,  config.OPENAI_KEYS),
+    ("openai:gpt-4.1",       _call_openai_premium,   config.OPENAI_KEYS),
     ("claude:sonnet-4.6",    _call_claude_premium,   config.ANTHROPIC_KEYS),
     ("grok:grok-4.20",       _call_grok_premium,     config.GROK_KEYS),
     ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
     # Fallback para standard se todos premium falharem
     ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
 ]
 
 # TIER 2: INSTITUCIONAL/GOVERNO — reescrita editorial, menos elaboração
 # Senado, Câmara, Gov.br, STF etc. — tom oficial, reescrita direta
 _TIER2_PROVIDERS = [
     ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
-    ("openai:gpt-4.1-mini", _call_openai,           config.OPENAI_KEYS),
+    ("openai:gpt-4.1-mini",  _call_openai,           config.OPENAI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
     ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
     ("grok:grok-4.1-fast",   _call_grok_mini,        config.GROK_KEYS),
 ]
 
 # TIER 3: Triagem e tarefas auxiliares — máxima economia
 _TIER3_PROVIDERS = [
+    ("gemini:2.5-flash-lite", _call_gemini_lite,     config.GEMINI_KEYS),
+    ("openai:gpt-4.1-nano",  _call_openai_nano,     config.OPENAI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
     ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
     ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
     ("grok:grok-4.1-fast",   _call_grok_mini,        config.GROK_KEYS),
@@ -351,9 +447,11 @@ _TIER_CURATOR_PROVIDERS = [
 # Junta múltiplas matérias sobre o mesmo tema em análise original
 # Exige máxima capacidade de síntese e redação jornalística
 _TIER_CONSOLIDATOR_PROVIDERS = [
+    ("claude:opus-4.6",      _call_claude_opus,      config.ANTHROPIC_KEYS),
     ("claude:sonnet-4.6",    _call_claude_premium,   config.ANTHROPIC_KEYS),
     ("openai:gpt-4.1",       _call_openai_premium,   config.OPENAI_KEYS),
     ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
+    ("deepseek:reasoner",    _call_deepseek_reasoner, config.DEEPSEEK_KEYS),
     ("grok:grok-4.20",       _call_grok_premium,     config.GROK_KEYS),
     ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
@@ -373,7 +471,10 @@ _TIER_PHOTO_EDITOR_PROVIDERS = [
 # TIER PHOTO ASSISTANT: Legendas, alt text, créditos — tarefas econômicas
 # Modelos econômicos para geração de texto descritivo curto.
 _TIER_PHOTO_ASSISTANT_PROVIDERS = [
+    ("gemini:2.5-flash-lite", _call_gemini_lite,     config.GEMINI_KEYS),
+    ("openai:gpt-4.1-nano",  _call_openai_nano,     config.OPENAI_KEYS),
     ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("claude:haiku-4.5",     _call_claude_haiku,     config.ANTHROPIC_KEYS),
     ("gemini:2.5-flash",     _call_gemini,           config.GEMINI_KEYS),
     ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
     ("grok:grok-4.1-fast",   _call_grok_mini,        config.GROK_KEYS),

@@ -624,6 +624,62 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
     return None
 
 # =====================================================================
+# GERAÇÃO DE LEGENDA + ALT TEXT via LLM (Assistente de Fotografia)
+# =====================================================================
+
+# Créditos formatados por tier de fonte
+_CREDIT_TEMPLATES = {
+    "tier1_oficial": "Reprodução / {domain}",
+    "tier2_gov": "Foto: {domain} / Divulgação",
+    "tier3a_flickr": "Foto: {photographer} / Flickr (CC BY)",
+    "tier3b_wikimedia": "Imagem sob Licença Creative Commons via Wikimedia Commons",
+    "tier3c_cse": "Foto: Reprodução / {domain}",
+    "tier4_unsplash": "Foto: {photographer} / Unsplash",
+    "tier4_pexels": "Foto: {photographer} / Pexels",
+    "tier4_pixabay": "Foto: {photographer} / Pixabay",
+    "tier5_placeholder": "Imagem ilustrativa / Brasileira.News",
+}
+
+def gerar_legenda_alt_text(titulo: str, fonte_tier: str = "", image_url: str = "") -> tuple[str, str]:
+    """
+    Gera alt_text descritivo (SEO/acessibilidade) e caption contextualizada via LLM econômico.
+    Retorna (alt_text, caption).
+    """
+    # Tentar LLM econômico para alt text
+    alt_text = titulo  # fallback
+    try:
+        from llm_router import call_llm, TIER_PHOTO_ASSISTANT
+        
+        prompt = f"""Gere um ALT TEXT descritivo para a imagem de uma notícia.
+O alt text deve:
+- Descrever a cena provável da imagem (baseado no título da notícia)
+- Ser conciso (máximo 120 caracteres)
+- Incluir contexto visual útil para acessibilidade
+- NÃO repetir o título literalmente
+
+Título da notícia: {titulo}
+Fonte da imagem: {fonte_tier}
+
+Responda APENAS com o alt text, sem explicações."""
+
+        result, provider = call_llm(
+            "Você é um assistente de fotografia que gera textos descritivos para acessibilidade.",
+            prompt,
+            tier=TIER_PHOTO_ASSISTANT
+        )
+        if result and len(result) < 200:
+            alt_text = result.strip().strip('"').strip("'")
+            logger.info(f"[Alt Text] Gerado via {provider}: {alt_text[:60]}...")
+    except Exception as e:
+        logger.debug(f"[Alt Text] LLM falhou, usando título: {e}")
+    
+    # Caption formatada por fonte
+    caption = _CREDIT_TEMPLATES.get(fonte_tier, f"Foto: Reprodução")
+    
+    return alt_text, caption
+
+
+# =====================================================================
 # FUNÇÃO PRINCIPAL
 # =====================================================================
 
@@ -661,11 +717,13 @@ def get_best_image_for_post(
     if not force_fallback and is_official:
         tier1_url = tier1_scrape_html(html_content, source_url)
         if tier1_url:
-            caption = f"Reprodução / Créditos limitados à fonte oficial ({urlparse(source_url).netloc})"
-            media_id = upload_to_wordpress(tier1_url, safe_filename, alt_text=title, caption=caption)
+            domain = urlparse(source_url).netloc
+            alt_text, caption = gerar_legenda_alt_text(title, "tier1_oficial", tier1_url)
+            caption = caption.format(domain=domain)
+            media_id = upload_to_wordpress(tier1_url, safe_filename, alt_text=alt_text, caption=caption)
             if media_id: return media_id
 
-    # Cérebro IA (Gemini): Gerar as melhores queries de busca OU usar explicitas vindas do Sintetizador
+    # Cérebro IA: Gerar as melhores queries de busca OU usar explicitas vindas do Sintetizador
     if explicit_gov_query or explicit_commons_query or explicit_block_stock is not None:
         logger.info("[Curador] Usando queries EXPLICITAS fornecidas pela Redação IA.")
         query_gov = [explicit_gov_query or title[:50]]
@@ -673,8 +731,8 @@ def get_best_image_for_post(
         query_stock = [explicit_stock_query or "News background"]
         block_stock = explicit_block_stock if explicit_block_stock is not None else False
     else:
-        logger.info("[Curador] Nenhuma query explicita fornecida, acionando fallback IA Gemini")
-        if _query_generator is None: # Ensure generator is initialized if not already
+        logger.info("[Curador] Nenhuma query explicita fornecida, acionando IA Editor de Fotografia")
+        if _query_generator is None:
             _query_generator = get_query_generator()
         tier_queries = _query_generator._generate_ai_queries(title, html_content, category)
         if tier_queries:
@@ -683,14 +741,13 @@ def get_best_image_for_post(
             query_stock = tier_queries.get("stock_en", ["Brazil news"])
             block_stock = tier_queries.get("block_stock", False)
         else:
-            # Fallback to default queries
             default_queries = _query_generator._build_default_queries(category, _query_generator._extract_key_entities(title, html_content), title)
             query_gov = [default_queries.get("gov_pt", title[:50])]
             query_commons = [default_queries.get("commons", title[:50])]
             query_stock = [default_queries.get("stock_en", "Brazil news")]
             block_stock = False
     
-    # Normalizar para listas (backward compat com strings simples)
+    # Normalizar para listas
     if isinstance(query_gov, str): query_gov = [query_gov]
     if isinstance(query_commons, str): query_commons = [query_commons]
     if isinstance(query_stock, str): query_stock = [query_stock]
@@ -704,7 +761,10 @@ def get_best_image_for_post(
     for q in query_gov:
         tier2_url = tier2_government_banks(q)
         if tier2_url:
-            media_id = upload_to_wordpress(tier2_url, safe_filename, alt_text=title, caption="Foto: Agência Governo / Senado / Livre Reprodução")
+            domain = urlparse(tier2_url).netloc
+            alt_text, caption = gerar_legenda_alt_text(title, "tier2_gov", tier2_url)
+            caption = caption.format(domain=domain, photographer="")
+            media_id = upload_to_wordpress(tier2_url, safe_filename, alt_text=alt_text, caption=caption)
             if media_id: return media_id
         logger.debug(f"[TIER 2] Nenhum resultado para: {q}")
 
@@ -712,7 +772,10 @@ def get_best_image_for_post(
     for q in query_gov:
         tier3c_url = tier3c_google_cse(q)
         if tier3c_url:
-            media_id = upload_to_wordpress(tier3c_url, safe_filename, alt_text=title, caption="Foto: Reprodução / Banco de Imagens Web (Domínio Público)")
+            domain = urlparse(tier3c_url).netloc
+            alt_text, caption = gerar_legenda_alt_text(title, "tier3c_cse", tier3c_url)
+            caption = caption.format(domain=domain, photographer="")
+            media_id = upload_to_wordpress(tier3c_url, safe_filename, alt_text=alt_text, caption=caption)
             if media_id: return media_id
         logger.debug(f"[TIER 3C] Nenhum resultado para: {q}")
 
@@ -720,7 +783,9 @@ def get_best_image_for_post(
     for q in query_gov:
         tier3a_url = tier3a_flickr_gov(q)
         if tier3a_url:
-            media_id = upload_to_wordpress(tier3a_url, safe_filename, alt_text=title, caption="Foto: Flickr Gov / C.C.")
+            alt_text, caption = gerar_legenda_alt_text(title, "tier3a_flickr", tier3a_url)
+            caption = caption.format(domain="Flickr", photographer="Autor")
+            media_id = upload_to_wordpress(tier3a_url, safe_filename, alt_text=alt_text, caption=caption)
             if media_id: return media_id
         logger.debug(f"[TIER 3A] Nenhum resultado para: {q}")
 
@@ -728,19 +793,22 @@ def get_best_image_for_post(
     for q in query_commons:
         tier3b_url = tier3b_wikimedia(q)
         if tier3b_url:
-            media_id = upload_to_wordpress(tier3b_url, safe_filename, alt_text=title, caption="Imagem sob Licença C.C. via Wikimedia Commons")
+            alt_text, caption = gerar_legenda_alt_text(title, "tier3b_wikimedia", tier3b_url)
+            media_id = upload_to_wordpress(tier3b_url, safe_filename, alt_text=alt_text, caption=caption)
             if media_id: return media_id
         logger.debug(f"[TIER 3B] Nenhum resultado para: {q}")
 
     # TIER 4: Stock API (Unsplash/Pexels) - GATILHO CAUTELAR
     category_blocks = ["politica", "justica", "esportes", "celebridades"]
     if category in category_blocks or block_stock:
-        logger.info(f"[TIER 4] Stock bloqueado para a categoria '{category}' ou pela flag BLOCK_STOCK={block_stock} (Prevenção de fotos incorretas).")
+        logger.info(f"[TIER 4] Stock bloqueado para a categoria '{category}' ou pela flag BLOCK_STOCK={block_stock}.")
     else:
         for q in query_stock:
             tier4_url, tier4_credit = tier4_stock_apis(q)
             if tier4_url:
-                media_id = upload_to_wordpress(tier4_url, safe_filename, alt_text=title, caption=tier4_credit)
+                # tier4_credit já contém "Foto por X via Unsplash/Pexels"
+                alt_text, _ = gerar_legenda_alt_text(title, "tier4_unsplash", tier4_url)
+                media_id = upload_to_wordpress(tier4_url, safe_filename, alt_text=alt_text, caption=tier4_credit)
                 if media_id: return media_id
             logger.debug(f"[TIER 4] Nenhum resultado para: {q}")
 
@@ -1110,50 +1178,45 @@ QUERY_STOCK_3: [query]
 BLOCK_STOCK: [TRUE ou FALSE]"""
 
         try:
-            resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}",
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.4,
-                        "maxOutputTokens": 400,
-                    }
-                },
-                timeout=20
-            )
+            from llm_router import call_llm, TIER_PHOTO_EDITOR
             
-            if resp.status_code == 200:
-                data = resp.json()
-                text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            system_prompt = "Você é o Editor de Fotografia Chefe de um portal jornalístico. Responda APENAS no formato solicitado, sem explicações adicionais."
+            text, provider = call_llm(system_prompt, prompt, tier=TIER_PHOTO_EDITOR)
+            
+            if not text:
+                logger.warning("[AI Queries] call_llm retornou None")
+                return None
+            
+            logger.info(f"[AI Queries] Provider: {provider}")
                 
-                queries = {}
+            queries = {}
+            
+            # Parse 3 levels for each tier
+            for tier_key, output_key in [("QUERY_GOV", "gov_pt"), ("QUERY_COMMONS", "commons"), ("QUERY_STOCK", "stock_en")]:
+                levels = []
+                for level in range(1, 4):
+                    match = re.search(rf"{tier_key}_{level}:\s*(.+?)(?:\n|$)", text)
+                    if match:
+                        levels.append(self._clean_query(match.group(1)))
+                if levels:
+                    queries[output_key] = levels
                 
-                # Parse 3 levels for each tier
-                for tier_key, output_key in [("QUERY_GOV", "gov_pt"), ("QUERY_COMMONS", "commons"), ("QUERY_STOCK", "stock_en")]:
-                    levels = []
-                    for level in range(1, 4):
-                        match = re.search(rf"{tier_key}_{level}:\s*(.+?)(?:\n|$)", text)
-                        if match:
-                            levels.append(self._clean_query(match.group(1)))
-                    if levels:
-                        queries[output_key] = levels
-                    
-                # Fallback: parse old single-query format for backward compat
-                if not queries:
-                    for key, pattern in [("gov_pt", "QUERY_GOV"), ("commons", "QUERY_COMMONS"), ("stock_en", "QUERY_STOCK")]:
-                        match = re.search(rf"{pattern}:\s*(.+?)(?:\n|$)", text)
-                        if match:
-                            queries[key] = [self._clean_query(match.group(1))]
-                
-                block_stock_match = re.search(r"BLOCK_STOCK:\s*(TRUE|FALSE)", text, re.I)
-                queries["block_stock"] = block_stock_match.group(1).upper() == "TRUE" if block_stock_match else False
-                
-                if len(queries) >= 2:
-                    for key in ["gov_pt", "commons", "stock_en"]:
-                        vals = queries.get(key, [])
-                        logger.info(f"[AI Queries] {key}: {vals}")
-                    logger.info(f"[AI Queries] block_stock: {queries.get('block_stock', False)}")
-                    return queries
+            # Fallback: parse old single-query format for backward compat
+            if not queries:
+                for key, pattern in [("gov_pt", "QUERY_GOV"), ("commons", "QUERY_COMMONS"), ("stock_en", "QUERY_STOCK")]:
+                    match = re.search(rf"{pattern}:\s*(.+?)(?:\n|$)", text)
+                    if match:
+                        queries[key] = [self._clean_query(match.group(1))]
+            
+            block_stock_match = re.search(r"BLOCK_STOCK:\s*(TRUE|FALSE)", text, re.I)
+            queries["block_stock"] = block_stock_match.group(1).upper() == "TRUE" if block_stock_match else False
+            
+            if len(queries) >= 2:
+                for key in ["gov_pt", "commons", "stock_en"]:
+                    vals = queries.get(key, [])
+                    logger.info(f"[AI Queries] {key}: {vals}")
+                logger.info(f"[AI Queries] block_stock: {queries.get('block_stock', False)}")
+                return queries
                     
         except Exception as e:
             logger.warning(f"[AI Queries] Erro: {e}")

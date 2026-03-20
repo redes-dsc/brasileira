@@ -361,6 +361,15 @@ _TIER_PHOTO_EDITOR_PROVIDERS = [
     ("grok:grok-3",          _call_grok_premium,     config.GROK_KEYS),
 ]
 
+# TIER PHOTO ASSISTANT: Legendas, alt text, créditos — tarefas econômicas
+# Modelos econômicos para geração de texto descritivo curto.
+_TIER_PHOTO_ASSISTANT_PROVIDERS = [
+    ("deepseek:v3",          _call_deepseek,         config.DEEPSEEK_KEYS),
+    ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),
+    ("qwen:plus",            _call_qwen,             config.QWEN_KEYS),
+    ("grok:grok-3-mini",     _call_grok_mini,        config.GROK_KEYS),
+]
+
 # Constantes de tier para uso externo
 TIER_PREMIUM = 1
 TIER_STANDARD = 2
@@ -368,6 +377,7 @@ TIER_ECONOMY = 3
 TIER_CURATOR = "curator"
 TIER_CONSOLIDATOR = "consolidator"
 TIER_PHOTO_EDITOR = "photo_editor"
+TIER_PHOTO_ASSISTANT = "photo_assistant"
 
 _TIER_MAP = {
     1:              _TIER1_PROVIDERS,
@@ -376,6 +386,7 @@ _TIER_MAP = {
     "curator":      _TIER_CURATOR_PROVIDERS,
     "consolidator": _TIER_CONSOLIDATOR_PROVIDERS,
     "photo_editor": _TIER_PHOTO_EDITOR_PROVIDERS,
+    "photo_assistant": _TIER_PHOTO_ASSISTANT_PROVIDERS,
 }
 
 

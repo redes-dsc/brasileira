@@ -9,14 +9,14 @@ Autenticação via Application Password (Basic Auth).
 
 
 import logging
-
 import re
-
 import time
-
-
+import unicodedata
 
 import requests
+
+# HTTP Session para pooling de conexões (bug 5.5)
+_wp_session = requests.Session()
 
 
 
@@ -62,7 +62,7 @@ def _request_with_retry(
 
         try:
 
-            resp = requests.request(method, url, **kwargs)
+            resp = _wp_session.request(method, url, **kwargs)
 
             if resp.status_code < 500:
 
@@ -152,7 +152,7 @@ def get_or_create_category(name: str) -> int | None:
         return cats[key]
 
     # Criar nova categoria via API (caso raro)
-    slug = re.sub(r"[^a-z0-9]+", "-", key).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize('NFKD', key).encode('ascii', 'ignore').decode()).strip("-")
     resp = _request_with_retry(
         "POST",
         f"{config.WP_API_BASE}/categories",
@@ -177,7 +177,7 @@ def get_or_create_tag(name: str) -> int | None:
         return tags[key]
 
     # Criar nova tag via API
-    slug = re.sub(r"[^a-z0-9]+", "-", key).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize('NFKD', key).encode('ascii', 'ignore').decode()).strip("-")
     resp = _request_with_retry(
         "POST",
         f"{config.WP_API_BASE}/tags",

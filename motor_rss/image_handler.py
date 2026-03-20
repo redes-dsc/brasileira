@@ -1,6 +1,9 @@
 """
 Shim para compatibilidade retroativa.
-Redireciona todas as chamadas para o novo Curador de Imagens Unificado.
+Redireciona chamadas para o Curador de Imagens Unificado.
+
+⚠️ NÃO re-exporta upload_to_wordpress diretamente para evitar
+   bypass da lógica de tiers e validação.
 """
 import logging
 import sys
@@ -12,13 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from curador_imagens_unificado import (
     get_featured_image,
     search_unsplash,
-    upload_to_wordpress,
-    extract_image_from_content
+    extract_image_from_content,
+    is_valid_image_url,
 )
 
 logger = logging.getLogger("motor_rss")
 
-# As funções já estão importadas diretamente no topo, então o shim é automático e compatível.
+
 def _is_valid_image_url(url: str) -> bool:
-    from curador_imagens_unificado import get_curador
-    return get_curador()._url_valida(url)
+    """Wrapper compatível usando a validação do curador unificado."""
+    return is_valid_image_url(url)

@@ -164,26 +164,9 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
 
 def roteador_ia_imagem(prompt_imagem):
-    import os
-    if os.getenv("ENABLE_AI_IMAGES", "0") != "1":
-        return None # [TRAVA EDITORIAL - DALL-E 3 DESATIVADO VIA ENV]
-
-
-    chaves_imagem = [c for c in POOL_CHAVES if c["tipo"] == "openai"]
-
-    for tentativa, config in enumerate(chaves_imagem):
-
-        try:
-
-            cliente = OpenAI(api_key=config["chave"])
-
-            res = cliente.images.generate(model="dall-e-3", prompt=prompt_imagem, size="1024x1024", n=1)
-
-            return requests.get(res.data[0].url).content
-
-        except Exception as e:
-
-            print(f"[ARTE AVISO] DALL-E falhou (Tentativa {tentativa + 1}). Tentando outra chave...")
-
+    """
+    [DESATIVADO] Geração de imagens por IA está permanentemente desativada.
+    O pipeline de imagens usa curador_imagens_unificado.py com fontes reais.
+    """
     return None
 

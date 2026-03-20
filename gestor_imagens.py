@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
+# ⚠️ DEPRECATED — Usar curador_imagens_unificado.py
+# Este módulo retorna bytes (conteúdo bruto) em vez de media_id (WordPress).
+# Mantido apenas para compatibilidade retroativa.
 
+import warnings
+import logging
 import requests
-
 from bs4 import BeautifulSoup
-
 import re
-
 from urllib.parse import urljoin
+
+warnings.warn(
+    "gestor_imagens.py está DEPRECATED. Use curador_imagens_unificado.get_curador() para novas integrações.",
+    DeprecationWarning, stacklevel=2
+)
+logger = logging.getLogger("gestor_imagens")
 
 
 

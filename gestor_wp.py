@@ -102,40 +102,32 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
             title=dados.get('h1_title', 'Noticias'),
             keywords=keywords
         )
-        
-        # Fallback local da IA se o curador unificado não encontrou imagem
-        if not img_id:
-            img_bytes = None
-            if not comando_ia or "USE_ORIGINAL_IMAGE" in comando_ia.upper():
-                titulo_base = dados.get('h1_title', 'Noticias')
-                comando_ia = f"Imagem editorial, fotorrealista e de alta qualidade representando: '{titulo_base}'. Sem letras."
-            
-            from roteador_ia import roteador_ia_imagem
-            img_bytes = roteador_ia_imagem(comando_ia)
-
-            if img_bytes:
-                res_img = requests.post(f"{WP_URL}/media", headers={**AUTH_HEADERS, 'Content-Disposition': 'attachment; filename="capa.jpg"', 'Content-Type': 'image/jpeg'}, data=img_bytes)
-                if res_img.status_code == 201: img_id = res_img.json().get('id')
+        # Curador unificado é a única fonte de imagem — IA generativa desativada
+        # (roteador_ia.roteador_ia_imagem retorna None permanentemente)
     else:
         img_id = None
 
-
-
     tag_ids = []
+    _tag_cache_local = {}  # Cache local para evitar requests duplicados
 
     for tag in dados.get('tags', []):
-
-        if len(tag) < 3: continue 
-
+        if len(tag) < 2: continue  # Permitir 'IA', '5G', 'TV' (fix bug 7.5)
+        
+        if tag in _tag_cache_local:
+            tag_ids.append(_tag_cache_local[tag])
+            continue
+        
         res_t = requests.post(f"{WP_URL}/tags", headers=AUTH_HEADERS, json={'name': tag})
-
-        if res_t.status_code == 201: tag_ids.append(res_t.json().get('id'))
-
+        if res_t.status_code == 201:
+            tid = res_t.json().get('id')
+            tag_ids.append(tid)
+            _tag_cache_local[tag] = tid
         elif res_t.status_code == 400:
-
             busca = requests.get(f"{WP_URL}/tags?search={tag}", headers=AUTH_HEADERS)
-
-            if busca.status_code == 200 and len(busca.json()) > 0: tag_ids.append(busca.json()[0].get('id'))
+            if busca.status_code == 200 and len(busca.json()) > 0:
+                tid = busca.json()[0].get('id')
+                tag_ids.append(tid)
+                _tag_cache_local[tag] = tid
 
 
 

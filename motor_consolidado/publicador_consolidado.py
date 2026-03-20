@@ -15,6 +15,7 @@ import config
 import db
 import wp_publisher
 import image_handler
+import requests
 
 from config_consolidado import (
     ID_REDACAO, TAG_CONSOLIDADA, TAG_HOME_ESPECIAL,
@@ -213,8 +214,6 @@ def publish_consolidated(article: dict, sources: list[dict]) -> int | None:
     tag_ids = wp_publisher._resolve_tags(tags)
 
     # Montar post data
-    import requests as req
-
     status = "draft" if PUBLISH_AS_DRAFT else "publish"
 
     post_data = {
@@ -242,7 +241,8 @@ def publish_consolidated(article: dict, sources: list[dict]) -> int | None:
         post_data["meta"] = meta
 
     try:
-        resp = req.post(
+        resp = wp_publisher._request_with_retry(
+            "POST",
             f"{config.WP_API_BASE}/posts",
             auth=(config.WP_USER, config.WP_APP_PASS),
             json=post_data,
@@ -257,14 +257,17 @@ def publish_consolidated(article: dict, sources: list[dict]) -> int | None:
                 post_id, title[:60], post_link, status,
             )
 
-            # Registrar no controle
-            source_urls = ",".join([s.get("url", "") for s in sources[:3]])
-            db.register_published(
-                post_id=post_id,
-                source_url=source_urls[:2048],
-                feed_name=FEED_NAME_CONSOLIDADA,
-                llm_used=llm_provider,
-            )
+            # Registrar no controle (try/except separado — bug 8.5)
+            try:
+                source_urls = ",".join([s.get("url", "") for s in sources[:3]])
+                db.register_published(
+                    post_id=post_id,
+                    source_url=source_urls[:2048],
+                    feed_name=FEED_NAME_CONSOLIDADA,
+                    llm_used=llm_provider,
+                )
+            except Exception as db_err:
+                logger.error("Erro ao registrar consolidada no DB (post %s já publicado): %s", post_id, db_err)
 
             return post_id
         else:

@@ -74,12 +74,13 @@ def is_official_source(url: str) -> bool:
     domain = urlparse(url).netloc.lower()
     return any(domain.endswith("." + d) or domain == d for d in OFFICIAL_DOMAINS)
 
-def _get_image_dimensions_from_headers(url: str) -> tuple[int, int] | None:
+def _get_image_dimensions_from_bytes(data: bytes) -> tuple[int, int] | None:
+    """Extrai dimensões de imagem a partir dos primeiros bytes (PNG, JPEG, WebP)."""
     try:
-        resp = requests.get(url, headers={"Range": "bytes=0-1024"}, timeout=config.HTTP_TIMEOUT, stream=True)
-        data = resp.content
+        # PNG
         if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
             return struct.unpack(">I", data[16:20])[0], struct.unpack(">I", data[20:24])[0]
+        # JPEG
         if data[:2] == b"\xff\xd8":
             i = 2
             while i < len(data) - 8:
@@ -89,22 +90,42 @@ def _get_image_dimensions_from_headers(url: str) -> tuple[int, int] | None:
                     return struct.unpack(">H", data[i + 7 : i + 9])[0], struct.unpack(">H", data[i + 5 : i + 7])[0]
                 length = struct.unpack(">H", data[i + 2 : i + 4])[0]
                 i += 2 + length
+        # WebP (RIFF....WEBP)
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            # VP8 (lossy)
+            if data[12:16] == b"VP8 " and len(data) >= 30:
+                w = struct.unpack("<H", data[26:28])[0] & 0x3FFF
+                h = struct.unpack("<H", data[28:30])[0] & 0x3FFF
+                return w, h
+            # VP8L (lossless)
+            if data[12:16] == b"VP8L" and len(data) >= 25:
+                bits = struct.unpack("<I", data[21:25])[0]
+                w = (bits & 0x3FFF) + 1
+                h = ((bits >> 14) & 0x3FFF) + 1
+                return w, h
     except Exception:
         pass
     return None
 
 def is_valid_image_url(url: str) -> bool:
-    """Valida se URL é de imagem adequada para notícia (não genérica/tema)."""
+    """
+    Valida se URL é de imagem adequada para notícia (não genérica/tema).
+    NÃO faz requisição HTTP — validação puramente por URL.
+    """
     if not url: return False
+    
+    # Fix: protocol-relative URLs (bug 1.16)
+    if url.startswith("//"):
+        url = "https:" + url
+    
     parsed = urlparse(url)
-    path_lower = parsed.path.lower()
-    url_lower = url.lower()
+    path_lower = parsed.path.lower()  # Apenas o path, não querystring
     
     # Verificar extensão
     ext = path_lower.rsplit(".", 1)[-1] if "." in path_lower else ""
     if ext not in ("jpg", "jpeg", "png", "webp"): return False
     
-    # Padrões a ignorar (logos, ícones, imagens de tema genéricas)
+    # Padrões a ignorar — aplicar apenas no path (não na querystring)
     skip_patterns = [
         "logo", "icon", "favicon", "avatar", "emoji", "1x1", "pixel",
         "transparencia", "compartilhamento", "/theme", "/themes/",
@@ -114,26 +135,7 @@ def is_valid_image_url(url: str) -> bool:
         "spinner", "loading", "btn-", "button", "arrow", "chevron",
         "background", "pattern", "texture", "gradient",
     ]
-    if any(p in url_lower for p in skip_patterns): return False
-    
-    # Verificar se é um arquivo de notícia real (geralmente tem data ou ID no path)
-    # Aceitar URLs com padrões de conteúdo dinâmico
-    content_patterns = [
-        "/files/", "/uploads/", "/media/", "/images/", "/fotos/",
-        "/noticia", "/materia", "/artigo", "/post/", "/news/",
-        r"\d{4}", r"\d{2,}",  # Anos ou IDs numéricos
-    ]
-    has_content_pattern = any(p in path_lower for p in content_patterns[:6])
-    
-    # Verificar dimensões da imagem
-    dims = _get_image_dimensions_from_headers(url)
-    if dims:
-        w, h = dims
-        if w < config.MIN_IMAGE_WIDTH or h < config.MIN_IMAGE_HEIGHT:
-            return False
-        # Imagens muito pequenas ou quadradas demais (provavelmente ícones)
-        if w < 200 and h < 200:
-            return False
+    if any(p in path_lower for p in skip_patterns): return False
     
     return True
 
@@ -141,6 +143,16 @@ def is_valid_image_url(url: str) -> bool:
 # =====================================================================
 # TIER 1: RASPAGEM DIRETA HTML
 # =====================================================================
+
+def _fix_protocol_relative(url: str, source_url: str = "") -> str:
+    """Corrige URLs protocol-relative (//cdn.example.com) e relativas."""
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith("/"):
+        parsed = urlparse(source_url)
+        return f"{parsed.scheme}://{parsed.netloc}{url}"
+    return url
+
 
 def tier1_scrape_html(html_content: str, source_url: str = "") -> str | None:
     """Busca og:image ou a primeira <img> válida no HTML."""
@@ -315,14 +327,9 @@ def tier2_government_banks(keywords: str) -> str | None:
 # =====================================================================
 
 # Contas Flickr governamentais brasileiras conhecidas
-FLICKR_GOV_USERS = [
-    "paborboleta",       # Palácio do Planalto
-    "senaborboleta",     # Senado Federal
-    "camaborboleta",     # Câmara dos Deputados
-    "agaborboleta",      # Agência Brasil
-    "govbr",             # Portal Gov.br
-    "staborboleta",      # STF
-]
+# Contas governamentais brasileiras no Flickr — busca direta sem user_id
+# (contas gov BR não possuem presença consistente no Flickr)
+FLICKR_GOV_USERS = []  # Desativado — IDs anteriores eram placeholders inválidos
 
 def tier3a_flickr_gov(keywords: str) -> str | None:
     """
@@ -352,28 +359,9 @@ def tier3a_flickr_gov(keywords: str) -> str | None:
             "media": "photos",
         }
         
-        # Filtrar por usuários governamentais se possível
-        for gov_user in FLICKR_GOV_USERS[:3]:
-            params["user_id"] = gov_user
-            try:
-                resp = requests.get(
-                    "https://api.flickr.com/services/rest/",
-                    params=params,
-                    timeout=10
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    photos = data.get("photos", {}).get("photo", [])
-                    for photo in photos:
-                        img_url = photo.get("url_l") or photo.get("url_m") or photo.get("url_o")
-                        if img_url and is_valid_image_url(img_url):
-                            logger.info(f"[TIER 3A] Imagem Flickr Gov encontrada: {img_url}")
-                            return img_url
-            except Exception:
-                continue
-        
-        # Busca geral com filtro de licença Creative Commons
-        del params["user_id"]
+        # Busca com filtro de licença Creative Commons + tags gov/brasil
+        params["tags"] = "brasil,governo,politica,brasilia"
+        params["tag_mode"] = "any"
         resp = requests.get(
             "https://api.flickr.com/services/rest/",
             params=params,
@@ -381,12 +369,15 @@ def tier3a_flickr_gov(keywords: str) -> str | None:
         )
         if resp.status_code == 200:
             data = resp.json()
-            photos = data.get("photos", {}).get("photo", [])
-            for photo in photos:
-                img_url = photo.get("url_l") or photo.get("url_m") or photo.get("url_o")
-                if img_url and is_valid_image_url(img_url):
-                    logger.info(f"[TIER 3A] Imagem Flickr CC encontrada: {img_url}")
-                    return img_url
+            if data.get("stat") == "fail":
+                logger.warning(f"[TIER 3A] Flickr API erro: {data.get('message', 'Unknown')}")
+            else:
+                photos = data.get("photos", {}).get("photo", [])
+                for photo in photos:
+                    img_url = photo.get("url_l") or photo.get("url_m") or photo.get("url_o")
+                    if img_url and is_valid_image_url(img_url):
+                        logger.info(f"[TIER 3A] Imagem Flickr CC encontrada: {img_url}")
+                        return img_url
                     
     except Exception as e:
         logger.warning(f"[TIER 3A] Erro Flickr API: {e}")
@@ -723,12 +714,24 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
         except ImportError:
             pass
 
-        resp = requests.get(image_url, timeout=config.HTTP_TIMEOUT, stream=True)
-        if resp.status_code != 200: return None
-        content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
-        image_data = resp.content
+        with requests.get(image_url, timeout=config.HTTP_TIMEOUT, stream=True) as resp:
+            if resp.status_code != 200: return None
+            content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+            # Validar Content-Type (bug 17.6): rejeitar HTML/JSON que retornou 200
+            if not content_type.startswith("image/"):
+                logger.warning(f"[Upload] Content-Type inválido: {content_type} para {image_url[:80]}")
+                return None
+            image_data = resp.content
         if len(image_data) < 1000: return None
         
+        # Verificar dimensões mínimas (movido de is_valid_image_url — bug 1.2)
+        dims = _get_image_dimensions_from_bytes(image_data[:2048])
+        if dims:
+            w, h = dims
+            if w < getattr(config, 'MIN_IMAGE_WIDTH', 200) or h < getattr(config, 'MIN_IMAGE_HEIGHT', 150):
+                logger.info(f"[Upload] Imagem muito pequena: {w}x{h}")
+                return None
+
         # Validação multimodal: enviar imagem ao LLM para verificar relevância
         aprovada, motivo = validar_imagem_multimodal(image_data, alt_text or filename)
         if not aprovada:
@@ -742,12 +745,14 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
             import numpy as np
             
             img = Image.open(BytesIO(image_data))
-            if img.mode not in ('RGB', 'RGBA'):
-                img = img.convert('RGB')
-            elif img.mode == 'RGBA':
+            # Fix bug 1.1: tratar TODOS os modos com alpha (RGBA, PA, LA)
+            if img.mode in ('RGBA', 'PA', 'LA'):
                 bg = Image.new('RGB', img.size, (255, 255, 255))
-                bg.paste(img, mask=img.split()[3])
+                converted = img.convert('RGBA')  # Normalizar para RGBA primeiro
+                bg.paste(converted, mask=converted.split()[3])
                 img = bg
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
             
             w, h = img.size
             logger.info(f"[Upload] Imagem original: {w}x{h}, {len(image_data)} bytes")
@@ -835,10 +840,15 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
             if caption: meta_payload["caption"] = caption
             
             if meta_payload:
-                requests.post(
-                    f"{config.WP_API_BASE}/media/{media_id}",
-                    auth=auth, json=meta_payload, timeout=10
-                )
+                try:
+                    meta_resp = requests.post(
+                        f"{config.WP_API_BASE}/media/{media_id}",
+                        auth=auth, json=meta_payload, timeout=10
+                    )
+                    if meta_resp.status_code not in (200, 201):
+                        logger.warning(f"[Upload] Meta update falhou (HTTP {meta_resp.status_code}): alt_text/caption não salvos")
+                except Exception as meta_err:
+                    logger.warning(f"[Upload] Erro ao salvar alt_text/caption para media {media_id}: {meta_err}")
             return media_id
         else:
             logger.warning(f"Erro upload WP (HTTP {up_resp.status_code}): {up_resp.text[:100]}")
@@ -903,6 +913,45 @@ Responda APENAS com o alt text, sem explicações."""
 
 
 # =====================================================================
+# MÉTRICAS DE TIER (Observabilidade)
+# =====================================================================
+
+_TIER_METRICS_FILE = "/home/bitnami/logs/image_tier_metrics.json"
+
+def _record_tier_success(tier_name: str, title: str = ""):
+    """Registra qual tier conseguiu entregar uma imagem (bug 17.7)."""
+    try:
+        from datetime import datetime
+        import json
+        metrics = {}
+        try:
+            with open(_TIER_METRICS_FILE, "r") as f:
+                metrics = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today not in metrics:
+            metrics[today] = {"tier1": 0, "tier2": 0, "tier3a": 0, "tier3b": 0, "tier4": 0, "tier5_placeholder": 0, "total": 0}
+        
+        metrics[today][tier_name] = metrics[today].get(tier_name, 0) + 1
+        metrics[today]["total"] = metrics[today].get("total", 0) + 1
+        
+        # Manter apenas últimos 30 dias
+        keys = sorted(metrics.keys())
+        if len(keys) > 30:
+            for old_key in keys[:-30]:
+                del metrics[old_key]
+        
+        with open(_TIER_METRICS_FILE, "w") as f:
+            json.dump(metrics, f, indent=2)
+        
+        logger.info(f"[Métricas] {tier_name} ✓ para: {title[:40]}")
+    except Exception:
+        pass  # Métricas não devem quebrar o pipeline
+
+
+# =====================================================================
 # FUNÇÃO PRINCIPAL
 # =====================================================================
 
@@ -923,16 +972,18 @@ def get_best_image_for_post(
     """
     logger.info(f"Buscando melhor imagem para: {title[:50]}...")
     safe_filename = re.sub(r"[^a-z0-9]+", "-", title.lower().strip())[:50]
+    # Fix bug 1.17: safe_filename pode ficar vazio para títulos sem chars ASCII
+    if not safe_filename.strip("-"):
+        safe_filename = "imagem-noticia"
     
     # 1. Determina se a fonte é oficial
     is_official = is_official_source(source_url)
     
     # Resolver a categoria antecipadamente para influenciar a busca
     category = "geral"
-    _query_generator = None # Initialize _query_generator
+    qg = get_query_generator()  # Fix bug 1.18: usar apenas o singleton global
     try:
-        _query_generator = get_query_generator()
-        category = _query_generator._detect_category(title, html_content) if html_content else "geral"
+        category = qg._detect_category(title, html_content) if html_content else "geral"
     except Exception:
         pass
     
@@ -944,7 +995,9 @@ def get_best_image_for_post(
             alt_text, caption = gerar_legenda_alt_text(title, "tier1_oficial", tier1_url)
             caption = caption.format(domain=domain)
             media_id = upload_to_wordpress(tier1_url, safe_filename, alt_text=alt_text, caption=caption)
-            if media_id: return media_id
+            if media_id:
+                _record_tier_success("tier1", title)
+                return media_id
 
     # Cérebro IA: Gerar as melhores queries de busca OU usar explicitas vindas do Sintetizador
     if explicit_gov_query or explicit_commons_query or explicit_block_stock is not None:
@@ -955,16 +1008,14 @@ def get_best_image_for_post(
         block_stock = explicit_block_stock if explicit_block_stock is not None else False
     else:
         logger.info("[Curador] Nenhuma query explicita fornecida, acionando IA Editor de Fotografia")
-        if _query_generator is None:
-            _query_generator = get_query_generator()
-        tier_queries = _query_generator._generate_ai_queries(title, html_content, category)
+        tier_queries = qg._generate_ai_queries(title, html_content, category)
         if tier_queries:
             query_gov = tier_queries.get("gov_pt", [title[:50]])
             query_commons = tier_queries.get("commons", [title[:50]])
             query_stock = tier_queries.get("stock_en", ["Brazil news"])
             block_stock = tier_queries.get("block_stock", False)
         else:
-            default_queries = _query_generator._build_default_queries(category, _query_generator._extract_key_entities(title, html_content), title)
+            default_queries = qg._build_default_queries(category, qg._extract_key_entities(title, html_content), title)
             query_gov = [default_queries.get("gov_pt", title[:50])]
             query_commons = [default_queries.get("commons", title[:50])]
             query_stock = [default_queries.get("stock_en", "Brazil news")]
@@ -988,19 +1039,12 @@ def get_best_image_for_post(
             alt_text, caption = gerar_legenda_alt_text(title, "tier2_gov", tier2_url)
             caption = caption.format(domain=domain, photographer="")
             media_id = upload_to_wordpress(tier2_url, safe_filename, alt_text=alt_text, caption=caption)
-            if media_id: return media_id
+            if media_id:
+                _record_tier_success("tier2", title)
+                return media_id
         logger.debug(f"[TIER 2] Nenhum resultado para: {q}")
 
-    # TIER 3C: Google CSE Imagens Abertas — tentar cada nível
-    for q in query_gov:
-        tier3c_url = tier3c_google_cse(q)
-        if tier3c_url:
-            domain = urlparse(tier3c_url).netloc
-            alt_text, caption = gerar_legenda_alt_text(title, "tier3c_cse", tier3c_url)
-            caption = caption.format(domain=domain, photographer="")
-            media_id = upload_to_wordpress(tier3c_url, safe_filename, alt_text=alt_text, caption=caption)
-            if media_id: return media_id
-        logger.debug(f"[TIER 3C] Nenhum resultado para: {q}")
+    # TIER 3C removido: já integrado como fallback dentro de tier2_government_banks (bug 1.5)
 
     # TIER 3A: Flickr Governamental/Institucional — tentar cada nível
     for q in query_gov:
@@ -1009,7 +1053,9 @@ def get_best_image_for_post(
             alt_text, caption = gerar_legenda_alt_text(title, "tier3a_flickr", tier3a_url)
             caption = caption.format(domain="Flickr", photographer="Autor")
             media_id = upload_to_wordpress(tier3a_url, safe_filename, alt_text=alt_text, caption=caption)
-            if media_id: return media_id
+            if media_id:
+                _record_tier_success("tier3a", title)
+                return media_id
         logger.debug(f"[TIER 3A] Nenhum resultado para: {q}")
 
     # TIER 3B: Wikimedia/Wikipedia — tentar cada nível
@@ -1018,7 +1064,9 @@ def get_best_image_for_post(
         if tier3b_url:
             alt_text, caption = gerar_legenda_alt_text(title, "tier3b_wikimedia", tier3b_url)
             media_id = upload_to_wordpress(tier3b_url, safe_filename, alt_text=alt_text, caption=caption)
-            if media_id: return media_id
+            if media_id:
+                _record_tier_success("tier3b", title)
+                return media_id
         logger.debug(f"[TIER 3B] Nenhum resultado para: {q}")
 
     # TIER 4: Stock API (Unsplash/Pexels) - GATILHO CAUTELAR
@@ -1032,12 +1080,18 @@ def get_best_image_for_post(
                 # tier4_credit já contém "Foto por X via Unsplash/Pexels"
                 alt_text, _ = gerar_legenda_alt_text(title, "tier4_unsplash", tier4_url)
                 media_id = upload_to_wordpress(tier4_url, safe_filename, alt_text=alt_text, caption=tier4_credit)
-                if media_id: return media_id
+                if media_id:
+                    _record_tier_success("tier4", title)
+                    return media_id
             logger.debug(f"[TIER 4] Nenhum resultado para: {q}")
 
     # TIER 5: Placeholder TIER
-    logger.info("Todos os Tiers falharam. Usando imagem placeholder de fallback.")
+    logger.warning("[ALERTA] Todos os Tiers (1-4) falharam para: %s — usando placeholder.", title[:60])
     media_id = upload_to_wordpress(PLACEHOLDER_IMAGE_URL, f"fallback-{safe_filename}", alt_text="Imagem de Notícia")
+    if media_id:
+        _record_tier_success("tier5_placeholder", title)
+    else:
+        logger.error("[ALERTA VERMELHO] Placeholder também falhou para: %s — post ficará sem imagem!", title[:60])
     return media_id
 
 
@@ -1045,15 +1099,20 @@ def get_best_image_for_post(
 # CLASSE SINGLETON PARA COMPATIBILIDADE
 # =====================================================================
 
+import threading
+
 class CuradorImagensUnificado:
     """
     Classe wrapper singleton para compatibilidade com sistemas existentes.
     """
     _instance = None
+    _lock = threading.Lock()
     
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if cls._instance is None:  # Double-check locking
+                    cls._instance = super().__new__(cls)
         return cls._instance
     
     def get_featured_image(

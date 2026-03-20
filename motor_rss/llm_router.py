@@ -189,10 +189,14 @@ def _call_gemini_premium(system_prompt: str, user_prompt: str) -> str:
     if not key:
         raise ValueError("Nenhuma GEMINI_API_KEY configurada")
     from google import genai
+    from google.genai import types
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
         model="gemini-2.5-pro-preview-05-06",
-        contents=f"{system_prompt}\n\n{user_prompt}",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
     )
     return response.text
 
@@ -206,10 +210,14 @@ def _call_gemini(system_prompt: str, user_prompt: str) -> str:
     if not key:
         raise ValueError("Nenhuma GEMINI_API_KEY configurada")
     from google import genai
+    from google.genai import types
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
         model="gemini-2.0-flash",
-        contents=f"{system_prompt}\n\n{user_prompt}",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        ),
     )
     return response.text
 
@@ -359,6 +367,7 @@ _TIER_PHOTO_EDITOR_PROVIDERS = [
     ("claude:sonnet-4",      _call_claude_premium,   config.ANTHROPIC_KEYS),
     ("gemini:2.5-pro",       _call_gemini_premium,   config.GEMINI_KEYS),
     ("grok:grok-3",          _call_grok_premium,     config.GROK_KEYS),
+    ("gemini:2.0-flash",     _call_gemini,           config.GEMINI_KEYS),  # Fallback econômico (bug 6.1)
 ]
 
 # TIER PHOTO ASSISTANT: Legendas, alt text, créditos — tarefas econômicas
@@ -475,9 +484,15 @@ def generate_article(
     providers = _TIER_MAP.get(tier, _TIER2_PROVIDERS)
 
     system_prompt = config.LLM_SYSTEM_PROMPT
+    # Truncar conteúdo com indicação (bug 6.5)
+    MAX_CONTENT = 6000
+    truncated_content = content[:MAX_CONTENT]
+    if len(content) > MAX_CONTENT:
+        truncated_content += "\n\n[... conteúdo truncado em 6000 caracteres ...]"
+    
     user_prompt = config.LLM_REWRITE_PROMPT_TEMPLATE.format(
         title=title,
-        content=content[:6000],
+        content=truncated_content,
         source=source,
         url=url,
         categories=", ".join(categories),

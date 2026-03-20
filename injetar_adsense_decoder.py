@@ -1,9 +1,13 @@
 import pymysql
 import re
 import base64
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DB_USER = "bn_wordpress"
-DB_PASS = "d0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b"
+DB_PASS = os.getenv("DB_PASS")
 DB_NAME = "bitnami_wordpress"
 PUB_ID = "ca-pub-7252039297007966"
 

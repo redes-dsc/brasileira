@@ -32,6 +32,11 @@ def check_feed(feed_data):
         if r.status_code == 404:
             logger.warning(f"Desativando {nome}: URL Retornou HTTP 404.")
             feed_data["ativo"] = False
+            try:
+                import sys; sys.path.insert(0, "/home/bitnami")
+                from alerta_notificacao import enviar_alerta
+                enviar_alerta(f"Feed desativado (404): {nome}", nivel="WARNING")
+            except: pass
             return feed_data, True
             
         parsed = feedparser.parse(r.text)
@@ -52,6 +57,11 @@ def check_feed(feed_data):
             if days_ago > 90:
                 logger.warning(f"Desativando {nome}: Inativo há {days_ago} dias (>90).")
                 feed_data["ativo"] = False
+                try:
+                    import sys; sys.path.insert(0, "/home/bitnami")
+                    from alerta_notificacao import enviar_alerta
+                    enviar_alerta(f"Feed desativado (inativo {days_ago}d): {nome}", nivel="WARNING")
+                except: pass
                 return feed_data, True
                 
         return feed_data, False

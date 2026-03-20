@@ -7,7 +7,7 @@ load_dotenv()
 conn = pymysql.connect(
     host='127.0.0.1', 
     user='bn_wordpress', 
-    password=os.getenv("DB_PASS", "d0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b"), 
+    password=os.getenv("DB_PASS"), 
     database='bitnami_wordpress', 
     port=3306
 )
@@ -135,7 +135,7 @@ with open(sql_file, "w", encoding="utf-8") as f:
 db_cmd = [
     "/opt/bitnami/mariadb/bin/mariadb",
     "-u", "bn_wordpress",
-    "-p" + os.getenv("DB_PASS", "d0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b"),
+    "-p" + os.getenv("DB_PASS"),
     "-h", "127.0.0.1", "-P", "3306",
     "bitnami_wordpress",
 ]

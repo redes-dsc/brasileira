@@ -6,6 +6,10 @@ Atualiza wp_7_postmeta.tdc_content e wp_7_posts.post_content para o post 18135.
 
 import subprocess
 import sys
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 INPUT_FILE = "/home/bitnami/homepage_tdc_tags.txt"
 BACKUP_FILE = "/home/bitnami/homepage_tdc_backup_pretags.txt"
@@ -14,7 +18,7 @@ BACKUP_FILE = "/home/bitnami/homepage_tdc_backup_pretags.txt"
 db_cmd = [
     "/opt/bitnami/mariadb/bin/mariadb",
     "-u", "bn_wordpress",
-    "-pd0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b",
+    "-p" + os.getenv("DB_PASS"),
     "-h", "127.0.0.1",
     "-P", "3306",
     "bitnami_wordpress",

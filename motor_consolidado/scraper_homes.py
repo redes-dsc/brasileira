@@ -171,7 +171,19 @@ def scrape_portal_titles(portal: dict, section: str = "ultimas") -> list[dict]:
         if not raw_titles:
             raw_titles = _fallback_generic_extraction(soup, url)
             if raw_titles:
-                logger.info("Fallback genérico para %s: %d títulos", portal_name, len(raw_titles))
+                logger.warning("Seletores falharam para %s — usando fallback genérico (%d títulos)", portal_name, len(raw_titles))
+                try:
+                    import sys; sys.path.insert(0, "/home/bitnami")
+                    from alerta_notificacao import enviar_alerta
+                    enviar_alerta(f"Seletores CSS falharam para {portal_name}. Fallback genérico usado.", nivel="WARNING")
+                except: pass
+            else:
+                logger.error("ZERO títulos extraídos de %s (seletores E fallback falharam)", portal_name)
+                try:
+                    import sys; sys.path.insert(0, "/home/bitnami")
+                    from alerta_notificacao import enviar_alerta
+                    enviar_alerta(f"Portal {portal_name}: 0 títulos extraídos. Possível mudança de layout.")
+                except: pass
     # Enriquecer com metadata
     results = []
     

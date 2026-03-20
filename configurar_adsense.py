@@ -22,10 +22,13 @@ import json
 import subprocess
 import shutil
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─── Configuração ───
 DB_USER = "bn_wordpress"
-DB_PASS = "d0e339d8be89d2cfe6d7c210a51ed0de203b386a273d647fc144a67b242e234b"
+DB_PASS = os.getenv("DB_PASS")
 DB_HOST = "127.0.0.1"
 DB_PORT = "3306"
 DB_NAME = "bitnami_wordpress"

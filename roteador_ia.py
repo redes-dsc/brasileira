@@ -51,7 +51,7 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
                     base_url = "https://api.x.ai/v1"
 
-                    modelo = "grok-beta"
+                    modelo = "grok-3"
 
                 elif tipo == "perplexity":
 
@@ -63,27 +63,19 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
                 cliente = OpenAI(api_key=chave, base_url=base_url)
 
-                resp_format = {"type": "json_object"} if tipo == "openai" else None
-
-                
-
-                res = cliente.chat.completions.create(
-
+                kwargs = dict(
                     model=modelo, 
-
                     messages=[
-
                         {"role": "system", "content": system_prompt},
-
                         {"role": "user", "content": user_prompt + "\n\nRetorne OBRIGATORIAMENTE um JSON valido."}
-
                     ], 
-
-                    response_format=resp_format, 
-
                     temperature=TEMPERATURA, timeout=60
-
                 )
+                # response_format só para OpenAI (bug 9.4)
+                if tipo == "openai":
+                    kwargs["response_format"] = {"type": "json_object"}
+                
+                res = cliente.chat.completions.create(**kwargs)
 
                 texto_saida = res.choices[0].message.content
 
@@ -117,7 +109,7 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
             elif tipo == "gemini":
 
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={chave}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={chave}"
 
                 payload = {
 

@@ -163,22 +163,16 @@ def tier1_scrape_html(html_content: str, source_url: str = "") -> str | None:
         soup = BeautifulSoup(html_content, "html.parser")
         og_img = soup.find("meta", property="og:image")
         if og_img and og_img.get("content"):
-            url = og_img.get("content")
-            if url.startswith("/"):
-                # Resolver URL relativa
-                parsed = urlparse(source_url)
-                url = f"{parsed.scheme}://{parsed.netloc}{url}"
+            url = _fix_protocol_relative(og_img.get("content"), source_url)
             if is_valid_image_url(url):
                 logger.info(f"[TIER 1] Imagem encontrada via og:image: {url}")
                 return url
         
         # 2. Tentar buscar tags <img>
         for img in soup.find_all("img"):
-            src = img.get("src")
+            src = img.get("src") or img.get("data-src")
             if src:
-                if src.startswith("/"):
-                    parsed = urlparse(source_url)
-                    src = f"{parsed.scheme}://{parsed.netloc}{src}"
+                src = _fix_protocol_relative(src, source_url)
                 if is_valid_image_url(src):
                     logger.info(f"[TIER 1] Imagem encontrada via tag img: {src}")
                     return src

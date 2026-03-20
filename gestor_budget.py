@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 BUDGET_FILE = Path("/home/bitnami/llm_budget.json")
-DAILY_CALL_LIMIT = int(os.getenv("DAILY_LLM_CALL_LIMIT", "500"))
+DAILY_CALL_LIMIT = int(os.getenv("DAILY_LLM_CALL_LIMIT", "2000"))
 
 def _load_budget():
     """Carrega os dados de budget do arquivo JSON."""

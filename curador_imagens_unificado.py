@@ -1181,13 +1181,26 @@ def get_featured_image(
     html_content: str = "",
     source_url: str = "",
     title: str = "",
-    keywords: str = ""
+    keywords: str = "",
+    explicit_gov_query: str = "",
+    explicit_commons_query: str = "",
+    explicit_stock_query: str = "",
+    explicit_block_stock: bool | None = None,
 ) -> Tuple[Optional[int], str]:
     """
     Função de compatibilidade para sistemas existentes.
     Retorna (media_id, caption).
     """
-    return get_curador().get_featured_image(html_content, source_url, title, keywords)
+    return get_curador().get_featured_image(
+        html_content=html_content,
+        source_url=source_url,
+        title=title,
+        keywords=keywords,
+        explicit_gov_query=explicit_gov_query,
+        explicit_commons_query=explicit_commons_query,
+        explicit_stock_query=explicit_stock_query,
+        explicit_block_stock=explicit_block_stock,
+    )
 
 
 def search_unsplash(query: str) -> Optional[str]:

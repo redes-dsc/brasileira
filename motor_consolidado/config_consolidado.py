@@ -233,20 +233,8 @@ PUBLISH_AS_DRAFT = os.getenv("PUBLISH_AS_DRAFT", "0") == "1"
 
 # ── Temas Proibidos ─────────────────────────────────────
 
-TEMAS_PROIBIDOS = [
-    "fofoca",
-    "celebridade",
-    "reality show",
-    "bbb",
-    "big brother",
-    "horóscopo",
-    "signos",
-    "novela",
-    "resumo de novela",
-    "quem saiu do bbb",
-    "vaza foto",
-    "flagra",
-]
+# Removido a pedido: entretenimento e fofocas agora são permitidos
+TEMAS_PROIBIDOS = []
 
 # ── Prioridade Editorial ────────────────────────────────
 

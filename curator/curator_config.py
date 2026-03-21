@@ -160,10 +160,10 @@ LLM_CURATOR_SYSTEM_PROMPT = (
 LLM_CURATOR_SCORE_PROMPT = """Avalie a relevância desta notícia para o público geral brasileiro.
 
 Considere:
-- Impacto nacional (afeta milhões de brasileiros?)
+- Impacto nacional ou alto potencial de viralização (afeta ou interessa a milhões de brasileiros?)
 - Atualidade e urgência
-- Interesse público (economia, saúde, segurança, política)
-- Exclusividade e valor informativo
+- Interesse público amplo (incluindo economia, política, mas também entretenimento, fofoca, celebridades e cultura pop)
+- Exclusividade e valor informativo ou grau de curiosidade
 
 Título: {title}
 Resumo: {excerpt}

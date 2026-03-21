@@ -455,3 +455,13 @@ def extrair_html_bruto(url: str) -> str:
 
     return html
 
+
+def extrair_texto_completo(url: str) -> str:
+    """Alias de compatibilidade — retorna apenas o texto extraído (string).
+
+    Usado por scripts legados que importavam do antigo extrator_conteudo.py da raiz.
+    """
+    result = extrair_conteudo_completo(url)
+    if result and result.get("text"):
+        return result["text"][:25000]
+    return ""

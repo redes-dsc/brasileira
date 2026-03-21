@@ -11,12 +11,16 @@ usando gemini-2.5-flash via nova biblioteca google-genai.
 """
 
 import os, re, time, logging, mysql.connector
+import sys
+from pathlib import Path
+
+# Adiciona motor_rss ao sys.path para usar o llm_router
+_RAIA1_DIR = Path("/home/bitnami/motor_rss")
+if str(_RAIA1_DIR) not in sys.path:
+    sys.path.insert(0, str(_RAIA1_DIR))
 
 from dotenv import load_dotenv
-
-from google import genai
-
-from google.genai import types
+import llm_router
 
 
 
@@ -47,22 +51,11 @@ logger = logging.getLogger(__name__)
 DB_HOST    = os.getenv("DB_HOST", "127.0.0.1")
 
 DB_PORT    = int(os.getenv("DB_PORT", "3306"))
-
 DB_USER    = os.getenv("DB_USER", "bn_wordpress")
-
 DB_PASS    = os.getenv("DB_PASS")
-
 DB_NAME    = os.getenv("DB_NAME", "bitnami_wordpress")
 
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-
-
-
 TP = "wp_7_"  # brasileira.news = blog_id 7
-
-
-
-client = genai.Client(api_key=GEMINI_KEY)
 
 
 
@@ -119,58 +112,33 @@ def fetch_posts_sem_excerpt():
 
 
 def gerar_excerpt(title, content):
-
     texto = re.sub(r'<[^>]+>', '', content)[:2000].strip()
-
     if not texto:
-
         return ''
 
-    prompt = (
-
-        f"Você é um editor jornalístico brasileiro sênior. "
-
-        f"Escreva um resumo jornalístico de exatamente 2 frases (máximo 300 caracteres) "
-
-        f"para o artigo abaixo. Use linguagem clara, direta e profissional. "
-
-        f"Não use aspas, não repita o título, não comece com 'O artigo'.\n\n"
-
-        f"Título: {title}\n\n"
-
-        f"Conteúdo: {texto}"
-
+    system_prompt = (
+        "Você é um editor jornalístico brasileiro sênior. "
+        "Escreva um resumo jornalístico de exatamente 2 frases (máximo 300 caracteres). "
+        "Use linguagem clara, direta e profissional. "
+        "Não use aspas, não repita o título, não comece com 'O artigo'."
     )
+    
+    user_prompt = f"Título: {title}\n\nConteúdo: {texto}"
 
     try:
-
-        resp = client.models.generate_content(
-
-            model="gemini-2.5-flash",
-
-            contents=prompt,
-
-            config=types.GenerateContentConfig(
-
-                max_output_tokens=120,
-
-                temperature=0.4,
-
-            )
-
+        resp_text = llm_router.call_llm(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            tier=llm_router.TIER_ECONOMICAL
         )
-
-        return resp.text.strip()[:300]
-
+        if resp_text:
+            return resp_text.strip()[:300]
     except Exception as e:
+        logger.warning(f"llm_router falhou: {e}")
 
-        logger.warning(f"Gemini falhou: {e}")
-
-        # Fallback: primeiras 2 frases limpas
-
-        frases = re.split(r'(?<=[.!?])\s+', texto)
-
-        return ' '.join(frases[:2])[:280]
+    # Fallback: primeiras 2 frases limpas
+    frases = re.split(r'(?<=[.!?])\s+', texto)
+    return ' '.join(frases[:2])[:280]
 
 
 

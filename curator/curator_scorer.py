@@ -13,6 +13,14 @@ import re
 import time
 from datetime import datetime, timedelta
 
+import sys
+from pathlib import Path
+
+_RAIA1_DIR = Path("/home/bitnami/motor_rss")
+if str(_RAIA1_DIR) not in sys.path:
+    sys.path.insert(0, str(_RAIA1_DIR))
+
+import llm_router
 import curator_config as cfg
 
 logger = logging.getLogger("curator")
@@ -173,35 +181,28 @@ def score_objective(post: dict) -> tuple[int, dict]:
 
 def score_llm(title: str, excerpt: str) -> int:
     """
-    Avalia relevância editorial via Gemini 2.5 Flash.
+    Avalia relevância editorial via llm_router (TIER_ECONOMICAL).
     Retorna score de 0 a 50.
     Fallback retorna LLM_FALLBACK_SCORE se falhar.
     """
     try:
-        from google import genai
-        
-        key_idx = hash(title) % len(cfg.GEMINI_KEYS) if cfg.GEMINI_KEYS else 0
-        key = cfg.GEMINI_KEYS[key_idx] if cfg.GEMINI_KEYS else None
-        if not key:
-            logger.warning("Sem GEMINI_API_KEY — retornando score fallback")
-            return cfg.LLM_FALLBACK_SCORE
-        
-        client = genai.Client(api_key=key)
-        
         prompt = cfg.LLM_CURATOR_SCORE_PROMPT.format(
             title=title,
             excerpt=excerpt or "(sem resumo)"
         )
         
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{cfg.LLM_CURATOR_SYSTEM_PROMPT}\n\n{prompt}",
+        text = llm_router.call_llm(
+            prompt,
+            system_prompt=cfg.LLM_CURATOR_SYSTEM_PROMPT,
+            tier=llm_router.TIER_ECONOMICAL
         )
         
+        if not text:
+            logger.warning("llm_router falhou — retornando score fallback")
+            return cfg.LLM_FALLBACK_SCORE
+            
         # Extrair número da resposta
-        text = response.text.strip()
-        # Pegar primeiro número inteiro encontrado
-        match = re.search(r"\b(\d{1,2})\b", text)
+        match = re.search(r"\b(\d{1,2})\b", text.strip())
         if match:
             score = int(match.group(1))
             return min(max(score, 0), 50)
@@ -218,7 +219,7 @@ def score_llm(title: str, excerpt: str) -> int:
 
 def decide_headline(candidates: list[dict]) -> int:
     """
-    Usa LLM Premium (Claude → GPT-4o → Gemini Pro) para decidir
+    Usa LLM Premium (via llm_router TIER_CURATOR) para decidir
     qual dos candidatos deve ser a manchete principal.
     
     Args:
@@ -244,77 +245,25 @@ def decide_headline(candidates: list[dict]) -> int:
         count=min(len(candidates), 5),
     )
     
-    # Cascata: Claude Sonnet 4.6 → GPT-4.1 → Gemini 2.5 Pro → fallback (maior score)
-    providers = [
-        ("claude", _call_claude_headline),
-        ("openai", _call_openai_headline),
-        ("gemini", _call_gemini_headline),
-    ]
-    
-    for provider_name, call_fn in providers:
-        try:
-            result = call_fn(cfg.LLM_HEADLINE_SYSTEM_PROMPT, prompt)
+    try:
+        result = llm_router.call_llm(
+            prompt,
+            system_prompt=cfg.LLM_HEADLINE_SYSTEM_PROMPT,
+            tier=llm_router.TIER_CURATOR
+        )
+        if result:
             match = re.search(r"\b(\d)\b", result.strip())
             if match:
                 idx = int(match.group(1)) - 1  # 1-based → 0-based
                 if 0 <= idx < len(candidates):
-                    logger.info("Manchete decidida por %s: candidato %d", provider_name, idx + 1)
+                    logger.info("Manchete decidida por llm_router: candidato %d", idx + 1)
                     return idx
-        except Exception as e:
-            logger.warning("Erro em %s para manchete: %s", provider_name, e)
+    except Exception as e:
+        logger.warning("Erro em decide_headline: %s", e)
     
     # Fallback: maior score
     logger.info("Manchete por fallback (maior score)")
     return 0
-
-
-def _call_claude_headline(system_prompt: str, user_prompt: str) -> str:
-    """Claude Sonnet 4.6 para decisão editorial."""
-    key = cfg.ANTHROPIC_KEYS[0] if cfg.ANTHROPIC_KEYS else None
-    if not key:
-        raise ValueError("Sem ANTHROPIC_API_KEY")
-    import anthropic
-    client = anthropic.Anthropic(api_key=key, timeout=cfg.LLM_TIMEOUT)
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=100,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return response.content[0].text
-
-
-def _call_openai_headline(system_prompt: str, user_prompt: str) -> str:
-    """GPT-4.1 para decisão editorial."""
-    key = cfg.OPENAI_KEYS[0] if cfg.OPENAI_KEYS else None
-    if not key:
-        raise ValueError("Sem OPENAI_API_KEY")
-    from openai import OpenAI
-    client = OpenAI(api_key=key)
-    response = client.chat.completions.create(
-        model="gpt-4.1",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        max_tokens=100,
-        timeout=cfg.LLM_TIMEOUT,
-    )
-    return response.choices[0].message.content
-
-
-def _call_gemini_headline(system_prompt: str, user_prompt: str) -> str:
-    """Gemini 2.5 Pro (stable) para decisão editorial."""
-    key = cfg.GEMINI_KEYS[0] if cfg.GEMINI_KEYS else None
-    if not key:
-        raise ValueError("Sem GEMINI_API_KEY")
-    from google import genai
-    client = genai.Client(api_key=key)
-    response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=f"{system_prompt}\n\n{user_prompt}",
-    )
-    return response.text
 
 
 # ─── Score combinado ─────────────────────────────────

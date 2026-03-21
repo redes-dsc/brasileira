@@ -162,7 +162,7 @@ LLM_CURATOR_SCORE_PROMPT = """Avalie a relevância desta notícia para o públic
 Considere:
 - Impacto nacional ou alto potencial de viralização (afeta ou interessa a milhões de brasileiros?)
 - Atualidade e urgência
-- Interesse público amplo (incluindo economia, política, mas também entretenimento, fofoca, celebridades e cultura pop)
+- Interesse público amplo (incluindo política, economia, segurança, saúde, meio ambiente, esportes, tecnologia, cultura pop, entretenimento e fofocas)
 - Exclusividade e valor informativo ou grau de curiosidade
 
 Título: {title}

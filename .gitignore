@@ -55,3 +55,4 @@ dados_*.py
 .qoder/
 .qoder-server/
 .antigravity-server/
+*.lock

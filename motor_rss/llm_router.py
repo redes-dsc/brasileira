@@ -423,6 +423,226 @@ def _call_qwen35_flash(system_prompt: str, user_prompt: str) -> str:
     return response.choices[0].message.content
 
 
+def _call_qwen_turbo(system_prompt: str, user_prompt: str) -> str:
+    """Qwen Turbo — rápido, contexto de 1M tokens."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen-turbo",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen3_coder(system_prompt: str, user_prompt: str) -> str:
+    """Qwen3 Coder Plus — especialista em geração de código e tool use."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3-coder-plus",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen3_vl_plus(system_prompt: str, user_prompt: str) -> str:
+    """Qwen3 VL Plus — compreensão visual avançada (imagem+texto)."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3-vl-plus",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen3_vl_flash(system_prompt: str, user_prompt: str) -> str:
+    """Qwen3 VL Flash — compreensão visual rápida e econômica."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3-vl-flash",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen_vl_ocr(system_prompt: str, user_prompt: str) -> str:
+    """Qwen VL OCR — reconhecimento de texto em imagens, especializado."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen-vl-ocr",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen_flash(system_prompt: str, user_prompt: str) -> str:
+    """Qwen Flash — thinking/non-thinking, 1M context."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen-flash",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen3_coder_flash(system_prompt: str, user_prompt: str) -> str:
+    """Qwen3 Coder Flash — code agent rápido, tool interaction."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen3-coder-flash",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen_mt_plus(system_prompt: str, user_prompt: str) -> str:
+    """Qwen MT Plus — tradução flagship, 92 idiomas, alta qualidade."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen-mt-plus",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen_mt_flash(system_prompt: str, user_prompt: str) -> str:
+    """Qwen MT Flash — tradução rápida, 92 idiomas, custo-eficiente."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen-mt-flash",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
+def _call_qwen_mt_lite(system_prompt: str, user_prompt: str) -> str:
+    """Qwen MT Lite — tradução econômica, 32 idiomas."""
+    key = _next_key("qwen", config.QWEN_KEYS)
+    if not key:
+        raise ValueError("Nenhuma QWEN_API_KEY configurada")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=key,
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    response = client.chat.completions.create(
+        model="qwen-mt-lite",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4096,
+        timeout=config.LLM_TIMEOUT,
+    )
+    return response.choices[0].message.content
+
+
 def _call_grok_mini(system_prompt: str, user_prompt: str) -> str:
     """Grok 4.1 Fast — versão leve para tarefas simples."""
     key = _next_key("grok", config.GROK_KEYS)

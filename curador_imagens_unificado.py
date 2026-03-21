@@ -635,7 +635,7 @@ Responda APENAS com: APROVADA ou REJEITADA
 Seguido de uma justificativa curta em 1 linha."""
 
         resp = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={gemini_key}",
             json={
                 "contents": [{
                     "parts": [

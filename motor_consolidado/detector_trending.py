@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 
 from config_consolidado import (
     STOPWORDS_PT, SIMILARITY_THRESHOLD,
-    MIN_SOURCES_TRENDING, TEMAS_PROIBIDOS,
+    MIN_SOURCES_TRENDING,
 )
 
 logger = logging.getLogger("motor_consolidado")
@@ -117,13 +117,6 @@ def _cluster_sequencematcher(titles: list[dict]) -> list[list[int]]:
 
 
 # ── Detecção de Trending ─────────────────────────────────
-
-def _is_tema_proibido(topic_label: str) -> bool:
-    """Verifica se o tema é proibido (entretenimento/fofoca)."""
-    label_lower = topic_label.lower()
-    return any(p in label_lower for p in TEMAS_PROIBIDOS)
-
-
 def detect_trending(all_titles: list[dict]) -> list[dict]:
     """
     Pipeline completo de detecção de temas em alta.
@@ -172,10 +165,7 @@ def detect_trending(all_titles: list[dict]) -> list[dict]:
         # Usar o título mais longo como label do tópico
         topic_label = max(cluster_titles, key=lambda t: len(t["title"]))["title"]
 
-        # Filtrar temas proibidos
-        if _is_tema_proibido(topic_label):
-            logger.info("Tema proibido descartado: %s", topic_label[:60])
-            continue
+        # O tema é aceito sem restrição de proibição
 
         # Calcular score de prioridade
         score = (

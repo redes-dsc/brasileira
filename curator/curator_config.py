@@ -157,13 +157,13 @@ LLM_CURATOR_SYSTEM_PROMPT = (
     "Sua tarefa é avaliar a relevância de uma notícia para o público brasileiro."
 )
 
-LLM_CURATOR_SCORE_PROMPT = """Avalie a relevância desta notícia para o público geral brasileiro.
+LLM_CURATOR_SCORE_PROMPT = """Avalie a qualidade jornalística e o potencial de engajamento desta notícia.
 
 Considere:
-- Impacto nacional ou alto potencial de viralização (afeta ou interessa a milhões de brasileiros?)
-- Atualidade e urgência
-- Interesse público amplo (incluindo política, economia, segurança, saúde, meio ambiente, esportes, tecnologia, cultura pop, entretenimento e fofocas)
-- Exclusividade e valor informativo ou grau de curiosidade
+- Qualidade da escrita e atratividade do tema
+- Atualidade e grau de novidade
+- Potencial de engajamento, curiosidade ou viralização
+- Clareza e valor do conteúdo
 
 Título: {title}
 Resumo: {excerpt}
@@ -180,9 +180,9 @@ LLM_HEADLINE_SYSTEM_PROMPT = (
 LLM_HEADLINE_PROMPT = """Analise os candidatos a manchete principal abaixo e escolha o MELHOR.
 
 Critérios (em ordem de importância):
-1. Impacto nacional imediato
-2. Urgência e atualidade
-3. Qualidade do título (atratividade, clareza)
+1. Força do título (atratividade, clareza, capacidade de prender a atenção)
+2. Urgência e grau de novidade
+3. Potencial de gerar cliques e engajamento
 4. Presença de imagem de destaque
 5. Variedade editorial
 

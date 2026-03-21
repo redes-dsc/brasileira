@@ -45,7 +45,7 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
                 base_url = None
 
-                modelo = "gpt-4o"
+                modelo = "gpt-4.1"
 
                 if tipo == "grok":
 
@@ -87,7 +87,7 @@ def roteador_ia_texto(system_prompt, user_prompt):
 
                 payload = {
 
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-4-6",
 
                     "system": system_prompt,
 

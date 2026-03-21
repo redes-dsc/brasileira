@@ -197,7 +197,7 @@ def avaliar_relevancia(titulo, veiculo):
 
             res = cliente.chat.completions.create(
 
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
 
                 messages=[{"role": "user", "content": prompt}],
 
@@ -231,7 +231,7 @@ def agrupar_noticias(noticias_brutas):
 
     global OPENAI_KEYS
 
-    print(f"[AGRUPAMENTO] A analisar {len(noticias_brutas)} manchetes (tentando gpt-4o-mini)...")
+    print(f"[AGRUPAMENTO] A analisar {len(noticias_brutas)} manchetes (tentando gpt-4.1-mini)...")
 
     
 
@@ -273,7 +273,7 @@ def agrupar_noticias(noticias_brutas):
 
             res = cliente.chat.completions.create(
 
-                model="gpt-4o-mini", 
+                model="gpt-4.1-mini", 
 
                 messages=[{"role": "user", "content": prompt}], 
 
@@ -415,7 +415,7 @@ def redigir_materia(grupo, noticias_brutas):
 
             res = cliente_grok.chat.completions.create(
 
-                model="grok-2-latest",
+                model="grok-4-1-fast-non-reasoning",
 
                 messages=[{"role": "user", "content": prompt}],
 
@@ -461,7 +461,7 @@ def redigir_materia(grupo, noticias_brutas):
 
             cliente = OpenAI(api_key=OPENAI_KEYS[0])
 
-            res = cliente.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+            res = cliente.chat.completions.create(model="gpt-4.1", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
 
             dados = json.loads(res.choices[0].message.content)
 

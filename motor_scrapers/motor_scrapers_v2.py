@@ -944,7 +944,7 @@ def processar_artigo(artigo, categories):
         logger.info("[IMAGEM] Fonte oficial (%s). Tier 1 puxará foto da matéria.", url[:60])
     else:
         # Verificar se o LLM principal foi PREMIUM
-        _premium_models = ("gpt-4o", "sonnet", "claude", "2.5-pro", "grok-3")
+        _premium_models = ("gpt-4.1", "sonnet", "claude", "2.5-pro", "grok-4")
         llm_is_premium = any(m in llm_used.lower() for m in _premium_models) if llm_used else False
 
         if llm_is_premium and article_data.get("imagem_busca_gov"):

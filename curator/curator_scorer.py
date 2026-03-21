@@ -3,7 +3,7 @@ Módulo de pontuação editorial — Home Curator Agent
 
 Calcula score de relevância em duas fases:
   1. Score objetivo (critérios mensuráveis, sem LLM)
-  2. Score LLM (avaliação editorial via Gemini Flash)
+  2. Score LLM (avaliação editorial via Gemini 2.5 Flash)
 
 Score final = objetivo + LLM (0 a ~130 teórico, prático até ~100)
 """
@@ -173,7 +173,7 @@ def score_objective(post: dict) -> tuple[int, dict]:
 
 def score_llm(title: str, excerpt: str) -> int:
     """
-    Avalia relevância editorial via Gemini Flash.
+    Avalia relevância editorial via Gemini 2.5 Flash.
     Retorna score de 0 a 50.
     Fallback retorna LLM_FALLBACK_SCORE se falhar.
     """
@@ -244,7 +244,7 @@ def decide_headline(candidates: list[dict]) -> int:
         count=min(len(candidates), 5),
     )
     
-    # Cascata: Claude → GPT-4o → Gemini Pro → fallback (maior score)
+    # Cascata: Claude Sonnet 4.6 → GPT-4.1 → Gemini 2.5 Pro → fallback (maior score)
     providers = [
         ("claude", _call_claude_headline),
         ("openai", _call_openai_headline),
@@ -269,14 +269,14 @@ def decide_headline(candidates: list[dict]) -> int:
 
 
 def _call_claude_headline(system_prompt: str, user_prompt: str) -> str:
-    """Claude Sonnet 4 para decisão editorial."""
+    """Claude Sonnet 4.6 para decisão editorial."""
     key = cfg.ANTHROPIC_KEYS[0] if cfg.ANTHROPIC_KEYS else None
     if not key:
         raise ValueError("Sem ANTHROPIC_API_KEY")
     import anthropic
     client = anthropic.Anthropic(api_key=key, timeout=cfg.LLM_TIMEOUT)
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=100,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
@@ -285,14 +285,14 @@ def _call_claude_headline(system_prompt: str, user_prompt: str) -> str:
 
 
 def _call_openai_headline(system_prompt: str, user_prompt: str) -> str:
-    """GPT-4o para decisão editorial."""
+    """GPT-4.1 para decisão editorial."""
     key = cfg.OPENAI_KEYS[0] if cfg.OPENAI_KEYS else None
     if not key:
         raise ValueError("Sem OPENAI_API_KEY")
     from openai import OpenAI
     client = OpenAI(api_key=key)
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4.1",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -304,14 +304,14 @@ def _call_openai_headline(system_prompt: str, user_prompt: str) -> str:
 
 
 def _call_gemini_headline(system_prompt: str, user_prompt: str) -> str:
-    """Gemini 2.5 Pro para decisão editorial."""
+    """Gemini 2.5 Pro (stable) para decisão editorial."""
     key = cfg.GEMINI_KEYS[0] if cfg.GEMINI_KEYS else None
     if not key:
         raise ValueError("Sem GEMINI_API_KEY")
     from google import genai
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
-        model="gemini-2.5-pro-preview-05-06",
+        model="gemini-2.5-pro",
         contents=f"{system_prompt}\n\n{user_prompt}",
     )
     return response.text

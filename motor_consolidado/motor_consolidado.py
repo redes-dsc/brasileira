@@ -53,11 +53,30 @@ logger = logging.getLogger("motor_consolidado")
 
 LOCK_FILE = _BASE / "motor_consolidado.pid"
 _lock_fd = None
+_MAX_RUNTIME_SECONDS = 2 * 3600  # 2 horas — auto-kill
+
+
+def _is_pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 def acquire_lock():
-    """Adquire lock exclusivo para evitar execução paralela."""
+    """Adquire lock exclusivo com detecção de lock stale."""
     global _lock_fd
+
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text().strip())
+            if not _is_pid_alive(old_pid):
+                logger.warning("Lock stale detectado (PID %d morto). Removendo.", old_pid)
+                LOCK_FILE.unlink(missing_ok=True)
+        except (ValueError, OSError):
+            LOCK_FILE.unlink(missing_ok=True)
+
     _lock_fd = open(LOCK_FILE, "w")
     try:
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -73,12 +92,12 @@ def release_lock():
     """Libera o lock."""
     global _lock_fd
     if _lock_fd:
-        fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-        _lock_fd.close()
-        _lock_fd = None
         try:
-            LOCK_FILE.unlink()
-        except OSError:
+            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
+            _lock_fd.close()
+            _lock_fd = None
+            LOCK_FILE.unlink(missing_ok=True)
+        except Exception:
             pass
 
 
@@ -93,8 +112,15 @@ def _handle_signal(signum, frame):
     _shutdown = True
 
 
+def _alarm_handler(signum, frame):
+    logger.error("⏰ MAX RUNTIME (%ds) atingido! Encerrando forçadamente.", _MAX_RUNTIME_SECONDS)
+    release_lock()
+    os._exit(1)
+
+
 signal.signal(signal.SIGTERM, _handle_signal)
 signal.signal(signal.SIGINT, _handle_signal)
+signal.signal(signal.SIGALRM, _alarm_handler)
 
 
 # ── Cycle Counter ────────────────────────────────────────
@@ -268,6 +294,9 @@ def main():
 
     if not acquire_lock():
         sys.exit(1)
+
+    signal.alarm(_MAX_RUNTIME_SECONDS)
+    logger.info("⏰ Watchdog armado: auto-kill em %ds", _MAX_RUNTIME_SECONDS)
 
     try:
         count = run_cycle()

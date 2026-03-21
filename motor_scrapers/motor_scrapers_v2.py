@@ -1195,14 +1195,44 @@ def run_cycle():
 
 
 
-
 LOCK_FILE = Path(__file__).resolve().parent / "motor_scrapers_v2.lock"
 _lock_fd = None
+_MAX_RUNTIME_SECONDS = 2 * 3600  # 2 horas — auto-kill se ultrapassar
+
+
+def _alarm_handler(signum, frame):
+    logger.error("⏰ MAX RUNTIME (%ds) atingido! Encerrando forçadamente.", _MAX_RUNTIME_SECONDS)
+    release_lock()
+    os._exit(1)
+
+
+signal.signal(signal.SIGALRM, _alarm_handler)
+
+
+def _is_pid_alive(pid):
+    """Verifica se um PID está rodando."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 def acquire_lock():
-    """Adquire file lock exclusivo. Retorna True se conseguiu, False se já está rodando."""
+    """Adquire file lock exclusivo com detecção de lock stale."""
     global _lock_fd
+
+    # Verificar se lock file existe com PID morto (stale lock)
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text().strip())
+            if not _is_pid_alive(old_pid):
+                logger.warning("Lock stale detectado (PID %d morto). Removendo.", old_pid)
+                LOCK_FILE.unlink(missing_ok=True)
+        except (ValueError, OSError):
+            # PID inválido no arquivo — remover
+            LOCK_FILE.unlink(missing_ok=True)
+
     try:
         _lock_fd = open(LOCK_FILE, "w")
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1230,6 +1260,10 @@ def main():
     if not acquire_lock():
         logger.warning("Outra instância do Motor Scrapers v2 já está em execução. Saindo.")
         sys.exit(0)
+
+    # Armar watchdog de runtime máximo
+    signal.alarm(_MAX_RUNTIME_SECONDS)
+    logger.info("⏰ Watchdog armado: auto-kill em %ds", _MAX_RUNTIME_SECONDS)
 
     logger.info("Motor Scrapers v2 (Raia 2) — brasileira.news — Iniciando...")
 

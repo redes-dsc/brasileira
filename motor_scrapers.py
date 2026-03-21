@@ -22,7 +22,9 @@ from gestor_cache import carregar_cache, salvar_no_cache
 
 from extrator_conteudo import extrair_texto_completo
 
-from roteador_ia import roteador_ia_texto
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'motor_rss'))
+import llm_router
 
 from gestor_wp import obter_autor_id_exato, publicar_no_wordpress
 
@@ -98,7 +100,7 @@ Credito obrigatorio no final: Fonte original: {noticia_bruta['link']}
 
     
 
-    texto_saida = roteador_ia_texto(system_prompt, user_prompt)
+    texto_saida = llm_router.call_llm(system_prompt=system_prompt, user_prompt=user_prompt + '\n\nRetorne OBRIGATORIAMENTE APENAS um JSON valido puro.', tier=llm_router.TIER_PREMIUM)[0]
 
     if not texto_saida: return None
 

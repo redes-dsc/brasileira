@@ -7,7 +7,7 @@ e coordena/implementa mudanças no tema WordPress.
 
 Integra com:
   - newspaper_knowledge.db (SQLite - knowledge base)
-  - roteador_ia.py (multi-LLM router)
+  - llm_router (41 modelos em 7 providers)
   - gestor_wp.py, reorganizar_homepage.py, aplicar_homepage.py (scripts existentes)
   - WordPress REST API & MariaDB direto
 """
@@ -22,7 +22,9 @@ from datetime import datetime
 
 # Importar roteador de IA
 sys.path.insert(0, '/home/bitnami')
-from roteador_ia import roteador_ia_texto
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'motor_rss'))
+import llm_router
 
 DB_PATH = '/home/bitnami/newspaper_knowledge.db'
 
@@ -214,7 +216,7 @@ Responda em JSON com esta estrutura:
         user_prompt = f"BRIEFING DO EDITOR: {briefing}"
 
         print(f"\n[AGENTE] Interpretando briefing via IA...")
-        resultado = roteador_ia_texto(system_prompt, user_prompt)
+        resultado = llm_router.call_llm(system_prompt=system_prompt, user_prompt=user_prompt + '\n\nRetorne OBRIGATORIAMENTE APENAS um JSON valido puro.', tier=llm_router.TIER_PREMIUM)[0]
 
         if resultado:
             try:

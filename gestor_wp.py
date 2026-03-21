@@ -103,7 +103,7 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
             keywords=keywords
         )
         # Curador unificado é a única fonte de imagem — IA generativa desativada
-        # (roteador_ia.roteador_ia_imagem retorna None permanentemente)
+        # Geração de imagens IA desativada — usa curador_imagens_unificado.py
     else:
         img_id = None
 

@@ -1,44 +1,57 @@
-"""Verificador gramatical determinístico para correções rápidas."""
+"""Verificação gramatical via LLM (tier PADRÃO)."""
 
-from __future__ import annotations
+import logging
+from typing import Optional
 
-import re
-from dataclasses import dataclass
-
-
-@dataclass(slots=True)
-class TextChange:
-    """Representa uma alteração textual simples."""
-
-    campo: str
-    original: str
-    corrigido: str
-    motivo: str
+logger = logging.getLogger(__name__)
 
 
-class GrammarChecker:
-    """Aplica ajustes ortográficos e de pontuação de baixo risco."""
+async def check_grammar(text: str, router=None) -> dict:
+    """Verifica e corrige gramática usando LLM.
+    
+    Args:
+        text: Texto HTML do artigo
+        router: SmartLLMRouter instance
+    
+    Returns:
+        dict com: corrected_text, changes_made (bool), corrections (list)
+    """
+    if router is None:
+        logger.warning("Router não disponível — retornando texto sem alterações")
+        return {"corrected_text": text, "changes_made": False, "corrections": []}
+    
+    prompt = f"""Revise o texto jornalístico abaixo para erros gramaticais em português brasileiro.
 
-    _SUBS: tuple[tuple[str, str, str], ...] = (
-        ("\u00e0 n\u00edvel de", "em", "locução inadequada"),
-        ("afim de", "a fim de", "grafia correta"),
-        ("a partir de agora", "a partir de agora", "normalização"),
-    )
+REGRAS:
+- Corrija APENAS erros gramaticais reais (concordância, regência, ortografia, acentuação)
+- NÃO altere o estilo, tom ou estrutura do texto
+- NÃO remova ou altere tags HTML (<p>, <h2>, <strong>, <a>, etc.)
+- NÃO adicione informações que não estavam no original
+- Se o texto estiver correto, retorne-o exatamente como está
 
-    def revisar(self, conteudo_html: str) -> tuple[str, list[TextChange]]:
-        """Retorna HTML corrigido e lista de mudanças."""
+Retorne APENAS o texto corrigido, sem comentários ou explicações.
 
-        updated = conteudo_html
-        changes: list[TextChange] = []
+TEXTO:
+{text[:4000]}"""
 
-        for needle, repl, reason in self._SUBS:
-            if needle in updated and needle != repl:
-                updated = updated.replace(needle, repl)
-                changes.append(TextChange("content", needle, repl, reason))
-
-        compacted = re.sub(r"\s{2,}", " ", updated)
-        if compacted != updated:
-            changes.append(TextChange("content", "espaçamento irregular", "espaçamento normalizado", "normalização"))
-            updated = compacted
-
-        return updated, changes
+    try:
+        response = await router.complete(
+            task_type="revisao_texto",
+            messages=[
+                {"role": "system", "content": "Você é um revisor gramatical do portal Brasileira.news. Corrija apenas erros reais de português."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=4000
+        )
+        
+        corrected = response.get("content", text) if isinstance(response, dict) else str(response)
+        changes_made = corrected.strip() != text.strip()
+        
+        return {
+            "corrected_text": corrected,
+            "changes_made": changes_made,
+            "corrections": []  # TODO: diff para listar correções específicas
+        }
+    except Exception as e:
+        logger.error("Grammar check LLM falhou: %s", e)
+        return {"corrected_text": text, "changes_made": False, "corrections": []}

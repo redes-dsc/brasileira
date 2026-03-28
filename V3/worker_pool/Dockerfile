@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for Playwright/Chromium
+# System deps for Playwright/Chromium (with-deps handles most, but keep extras for safety)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-base.txt /app/requirements-base.txt
-RUN pip install --no-cache-dir -r /app/requirements-base.txt
-RUN python -m playwright install chromium
+RUN pip install --no-cache-dir -r /app/requirements-base.txt \
+    && python -m playwright install chromium --with-deps
 
 COPY shared /app/shared
 COPY smart_router /app/smart_router

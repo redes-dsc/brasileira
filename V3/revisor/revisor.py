@@ -13,6 +13,35 @@ logger = logging.getLogger(__name__)
 REVISION_LOCK_TTL = 120  # seconds
 
 
+def _make_router_with_complete(router):
+    """Retorna um wrapper que adiciona o método .complete() ao router.
+
+    grammar_checker e style_checker chamam router.complete(task_type, messages, max_tokens).
+    SmartLLMRouter só expõe route_request(LLMRequest). Este wrapper adapta a interface.
+    """
+    class RouterWithComplete:
+        def __init__(self, inner):
+            self._inner = inner
+
+        async def complete(self, task_type: str, messages: list, max_tokens: int = 4000) -> dict:
+            request = LLMRequest(
+                task_type=task_type,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.2,
+            )
+            response = await self._inner.route_request_safe(request)
+            if response is None:
+                raise RuntimeError("route_request_safe retornou None (todos providers falharam)")
+            return {"content": response.content}
+
+        # Proxy tudo mais para o router original
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    return RouterWithComplete(router)
+
+
 class RevisorAgent:
     """Revisa artigos publicados e aplica correções in-place."""
 
@@ -22,6 +51,8 @@ class RevisorAgent:
         self.redis = redis
         self.pg_pool = pg_pool
         self.kafka = kafka
+        # Router com interface .complete() para os checkers
+        self._router_compat = _make_router_with_complete(router)
 
     async def processar_evento(self, event: dict[str, Any]) -> Optional[dict[str, Any]]:
         """Processa evento article-published: revisa e corrige."""
@@ -64,7 +95,24 @@ class RevisorAgent:
             logger.info("Post %d sem correções necessárias", wp_post_id)
             return {"wp_post_id": wp_post_id, "corrections": 0}
 
-        # 3. Aplicar correções via PATCH (NUNCA rejeita — Regra #10)
+        # Texto corrigido pelo LLM principal — base para os passes adicionais
+        conteudo_revisado = corrections.get("conteudo_corrigido") or conteudo
+        titulo_revisado = corrections.get("titulo_corrigido") or titulo
+
+        # 3. Passes adicionais: grammar_checker → style_checker (graceful degradation)
+        conteudo_revisado, titulo_revisado = await self._apply_checker_passes(
+            conteudo_revisado, titulo_revisado
+        )
+
+        # Reconciliar resultado final de volta ao dict de corrections
+        if conteudo_revisado != conteudo:
+            corrections["conteudo_corrigido"] = conteudo_revisado
+            corrections["has_corrections"] = True
+        if titulo_revisado != titulo:
+            corrections["titulo_corrigido"] = titulo_revisado
+            corrections["has_corrections"] = True
+
+        # 4. Aplicar correções via PATCH (NUNCA rejeita — Regra #10)
         patch_data: dict[str, Any] = {}
         if corrections.get("titulo_corrigido") and corrections["titulo_corrigido"] != titulo:
             patch_data["title"] = corrections["titulo_corrigido"]
@@ -80,7 +128,7 @@ class RevisorAgent:
             except Exception:
                 logger.error("Falha ao aplicar PATCH no post %d", wp_post_id, exc_info=True)
 
-        # 4. Registrar revisão na memória episódica
+        # 5. Registrar revisão na memória episódica
         if self.pg_pool:
             try:
                 from shared.memory import MemoryManager
@@ -94,6 +142,35 @@ class RevisorAgent:
                 pass
 
         return {"wp_post_id": wp_post_id, "corrections": len(patch_data)}
+
+    async def _apply_checker_passes(self, conteudo: str, titulo: str) -> tuple[str, str]:
+        """Aplica grammar_checker e style_checker como passes sequenciais.
+
+        Ambos os checkers usam router.complete() — fornecemos o wrapper compatível.
+        Falhas são silenciosas (graceful degradation): o texto anterior é mantido.
+        """
+        from .grammar_checker import check_grammar
+        from .style_checker import check_style
+
+        # Passe 1 — Gramática
+        try:
+            grammar_result = await check_grammar(conteudo, router=self._router_compat)
+            if grammar_result.get("changes_made"):
+                conteudo = grammar_result["corrected_text"]
+                logger.debug("grammar_checker aplicou correções")
+        except Exception:
+            logger.warning("grammar_checker falhou, continuando sem alterações", exc_info=True)
+
+        # Passe 2 — Estilo editorial
+        try:
+            style_result = await check_style(conteudo, titulo, router=self._router_compat)
+            if style_result.get("changes_made"):
+                conteudo = style_result["corrected_text"]
+                logger.debug("style_checker aplicou correções")
+        except Exception:
+            logger.warning("style_checker falhou, continuando sem alterações", exc_info=True)
+
+        return conteudo, titulo
 
     async def _review_with_llm(self, titulo: str, conteudo: str, resumo: str) -> Optional[dict[str, Any]]:
         """Revisão via LLM PADRAO: gramática, estilo, SEO."""

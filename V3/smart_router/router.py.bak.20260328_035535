@@ -158,9 +158,7 @@ class SmartLLMRouter:
             "max_tokens": request.max_tokens,
             "api_key": api_key,
         }
-        # Providers that do not support response_format (structured output)
-        RESPONSE_FORMAT_UNSUPPORTED = {"xai", "perplexity"}
-        if request.response_format and provider not in RESPONSE_FORMAT_UNSUPPORTED:
+        if request.response_format:
             kwargs["response_format"] = request.response_format
         api_base = PROVIDER_API_BASES.get(provider)
         if api_base:

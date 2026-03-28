@@ -7,6 +7,7 @@ import logging
 import re
 from urllib.parse import urljoin, urlparse
 
+import feedparser
 import requests
 from bs4 import BeautifulSoup
 
@@ -90,10 +91,6 @@ def _extract_titles_with_selectors(soup: BeautifulSoup, selectors: list[str], ba
 
             results.append({"title": title, "url": href})
 
-        # Se encontrou resultados com este seletor, não precisa tentar os demais
-        if results:
-            break
-
     return results
 
 
@@ -116,7 +113,6 @@ def _fallback_generic_extraction(soup: BeautifulSoup, base_url: str) -> list[dic
                 continue
                 
         if href and not href.startswith("http"):
-            from urllib.parse import urljoin
             href = urljoin(base_url, href)
         if href and href in seen_urls:
             continue
@@ -143,7 +139,6 @@ def scrape_portal_titles(portal: dict, section: str = "ultimas") -> list[dict]:
     # Tentativa via RSS feed (preferencial se configurado)
     if rss_url:
         try:
-            import feedparser
             feed = feedparser.parse(rss_url)
             for entry in feed.entries:
                 if hasattr(entry, "title") and hasattr(entry, "link"):
@@ -172,18 +167,9 @@ def scrape_portal_titles(portal: dict, section: str = "ultimas") -> list[dict]:
             raw_titles = _fallback_generic_extraction(soup, url)
             if raw_titles:
                 logger.warning("Seletores falharam para %s — usando fallback genérico (%d títulos)", portal_name, len(raw_titles))
-                try:
-                    import sys; sys.path.insert(0, "/home/bitnami")
-                    from alerta_notificacao import enviar_alerta
-                    enviar_alerta(f"Seletores CSS falharam para {portal_name}. Fallback genérico usado.", nivel="WARNING")
-                except: pass
             else:
                 logger.error("ZERO títulos extraídos de %s (seletores E fallback falharam)", portal_name)
-                try:
-                    import sys; sys.path.insert(0, "/home/bitnami")
-                    from alerta_notificacao import enviar_alerta
-                    enviar_alerta(f"Portal {portal_name}: 0 títulos extraídos. Possível mudança de layout.")
-                except: pass
+                
     # Enriquecer com metadata
     results = []
     
@@ -196,7 +182,7 @@ def scrape_portal_titles(portal: dict, section: str = "ultimas") -> list[dict]:
             "url": item["url"],
             "portal_name": portal_name,
             "section": portal.get("section", section),
-            "is_manchete": i < 3,  # primeiros 3 = manchetes
+            "is_manchete": i == 0,  # Apenas 1 manchete autêntica
             "is_mais_lida": portal.get("section") == "mais_lidas",
         })
 

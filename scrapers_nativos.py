@@ -23,7 +23,7 @@ import nest_asyncio
 
 
 
-nest_asyncio.apply()
+
 
 
 
@@ -40,22 +40,15 @@ HEADERS = {
 
 
 async def fetch(client: httpx.AsyncClient, url: str) -> str:
-
     for attempt in range(3):
-
         try:
-
             r = await client.get(url, headers=HEADERS, follow_redirects=True, timeout=15)
-
-            if r.status_code in [200, 202, 403]: 
-
+            if r.status_code in [200, 202]: 
                 return r.text
-
         except Exception:
-
             if attempt == 2: return ""
-
             await asyncio.sleep(1)
+    return ""
 
 
 
@@ -304,14 +297,13 @@ def coletar_links_scraper(tipo_molde: str, nome_veiculo: str, url_alvo: str):
             return unicos
 
     try:
-
-        loop = asyncio.get_event_loop()
-
-        return loop.run_until_complete(_run())
-
+        nest_asyncio.apply()
+        if sys.version_info >= (3, 10):
+            return asyncio.run(_run())
+        else:
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(_run())
     except Exception as e:
-
         print(f"[ERRO SCRAPER] Falha ao rodar {tipo_molde} em {url_alvo}: {e}")
-
         return []
 

@@ -39,21 +39,19 @@ def _is_official_source(source_url: str) -> bool:
     """Verifica se a URL da fonte é de um domínio oficial brasileiro."""
     if not source_url:
         return False
-    source_lower = source_url.lower()
-    return any(domain in source_lower for domain in cfg.OFFICIAL_DOMAINS)
+    from urllib.parse import urlparse
+    netloc = urlparse(source_url).netloc.lower()
+    return any(netloc == domain or netloc.endswith("." + domain) for domain in cfg.OFFICIAL_DOMAINS)
 
 
-def _has_br_context(tags: list[str]) -> bool:
-    """Heurística: post internacional tem contexto BR se tem tags BR."""
+def _has_br_context(title: str, excerpt: str, tags: list[str]) -> bool:
+    """Heurística: post internacional tem contexto BR se tem menção BR no título, excerpt ou tags."""
     br_keywords = [
         "brasil", "brasileiro", "governo", "lula", "congresso",
-        "senado", "câmara", "stf", "real", "ibovespa",
+        "senado", "câmara", "stf", "real", "ibovespa", "brasília",
     ]
-    for tag in tags:
-        tag_lower = tag.lower()
-        if any(kw in tag_lower for kw in br_keywords):
-            return True
-    return False
+    search_text = f"{title} {excerpt} {' '.join(tags)}".lower()
+    return any(kw in search_text for kw in br_keywords)
 
 
 def score_objective(post: dict) -> tuple[int, dict]:
@@ -107,13 +105,21 @@ def score_objective(post: dict) -> tuple[int, dict]:
         breakdown["consolidada"] = cfg.SCORE_CONSOLIDADA
     
     # +15: Tema de alto interesse
+    import random
+    key = random.choice(cfg.GEMINI_KEYS) if getattr(cfg, "GEMINI_KEYS", None) else ""       
     if categories & cfg.HIGH_INTEREST_CATEGORY_IDS:
         score += cfg.SCORE_ALTO_INTERESSE
         breakdown["alto_interesse"] = cfg.SCORE_ALTO_INTERESSE
     
     # +10: Post recente (< 1h)
     if isinstance(post_date, datetime):
-        age = datetime.now() - post_date
+        try:
+            from zoneinfo import ZoneInfo
+            local_now = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+        except Exception:
+            local_now = datetime.now() - timedelta(hours=3) # Fallback simples
+            
+        age = local_now - post_date
         if age < timedelta(hours=1):
             score += cfg.SCORE_RECENTE
             breakdown["recente"] = cfg.SCORE_RECENTE
@@ -146,7 +152,7 @@ def score_objective(post: dict) -> tuple[int, dict]:
     
     # -20: Internacional sem contexto BR
     if categories & cfg.INTERNATIONAL_CATEGORY_IDS:
-        if not _has_br_context(tag_names):
+        if not _has_br_context(title, excerpt, tag_names):
             score += cfg.PENALTY_INTL_SEM_BR
             breakdown["intl_sem_br"] = cfg.PENALTY_INTL_SEM_BR
     
@@ -174,7 +180,7 @@ def score_objective(post: dict) -> tuple[int, dict]:
     breakdown["title_len"] = title_len
     breakdown["total_objetivo"] = score
     
-    return max(score, 0), breakdown
+    return max(score, -300), breakdown
 
 
 # ─── Fase 2: Score LLM ──────────────────────────────
@@ -201,8 +207,11 @@ def score_llm(title: str, excerpt: str) -> int:
             logger.warning("llm_router falhou — retornando score fallback")
             return cfg.LLM_FALLBACK_SCORE
             
-        # Extrair número da resposta
-        match = re.search(r"\b(\d{1,2})\b", text.strip())
+        # Extrair número da resposta (primeiro procurando por um numero isolado)
+        match = re.search(r"^[^0-9]*(\d{1,2})[^0-9]*$", text.strip())
+        if not match:
+            match = re.search(r"\b(\d{1,2})\b", text.strip())
+            
         if match:
             score = int(match.group(1))
             return min(max(score, 0), 50)
@@ -248,11 +257,14 @@ def decide_headline(candidates: list[dict]) -> int:
     try:
         result = llm_router.call_llm(
             prompt,
-            system_prompt=cfg.LLM_HEADLINE_SYSTEM_PROMPT,
+            system_prompt=cfg.LLM_HEADLINE_SYSTEM_PROMPT, # Original line
             tier=llm_router.TIER_CURATOR
         )
         if result:
-            match = re.search(r"\b(\d)\b", result.strip())
+            match = re.search(r"^[^0-9]*([1-5])[^0-9]*$", result.strip())
+            if not match:
+                match = re.search(r"\b([1-5])\b", result.strip())
+                
             if match:
                 idx = int(match.group(1)) - 1  # 1-based → 0-based
                 if 0 <= idx < len(candidates):

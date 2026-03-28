@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-WP_APP_PASSWORD = os.getenv("WP_APP_PASS", "nWgboohRWZGLv2d7ebQgkf80")
+WP_APP_PASSWORD = os.getenv("WP_APP_PASS")
 AUTH_HEADERS = {
     'Authorization': f'Basic {base64.b64encode(f"{WP_USER}:{WP_APP_PASSWORD}".encode()).decode()}',
     'Content-Type': 'application/json'

@@ -9,11 +9,17 @@ import sqlite3
 import os
 import subprocess
 import json
+import shutil
 
 DB_PATH = '/home/bitnami/newspaper_knowledge.db'
 
 def criar_banco():
     if os.path.exists(DB_PATH):
+        try:
+            shutil.copy2(DB_PATH, DB_PATH + ".bak")
+            print(f"[OK] Backup previo gerado em {DB_PATH}.bak")
+        except Exception as e:
+            print(f"[AVISO] Nao foi possivel criar backup previo: {e}")
         os.remove(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -568,14 +574,18 @@ def popular_theme_settings(conn):
 def atualizar_post_counts(conn):
     """Tenta atualizar contagem de posts por categoria via MariaDB."""
     try:
+        env = os.environ.copy()
+        db_pass = os.getenv("DB_PASS", "")
+        if db_pass:
+            env["MYSQL_PWD"] = db_pass
+            
         cmd = [
             '/opt/bitnami/mariadb/bin/mariadb',
             '-u', 'bn_wordpress',
-            f'-p{os.getenv("DB_PASS")}',
             '-h', '127.0.0.1', '-P', '3306', 'bitnami_wordpress', '-N', '-e',
             "SELECT tt.term_id, tt.count FROM wp_7_term_taxonomy tt WHERE tt.taxonomy='category';"
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, env=env)
         if result.returncode == 0:
             c = conn.cursor()
             updated = 0

@@ -82,12 +82,7 @@ for i, suffix in enumerate(["", "_2", "_3"], 1):
     time.sleep(1)
 
 # --- DEEPSEEK (novas) ---
-deepseek_keys = [
-    "sk-f594930120eb4735846328cc05b35f37",
-    "sk-f4c757f6f3ef4bc5b5971e37569ac10c",
-    "sk-16eee84985aa4470a6f620b0a80b69ba",
-]
-for i, key in enumerate(deepseek_keys, 1):
+for i, key in enumerate(config.DEEPSEEK_KEYS, 1):
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
@@ -98,12 +93,7 @@ for i, key in enumerate(deepseek_keys, 1):
     time.sleep(1)
 
 # --- ALIBABA/QWEN (novas) ---
-qwen_keys = [
-    "sk-d9aadafdd8574993a983f211b53a9854",
-    "sk-6347b038d2f7487b920fadf4cf7ff812",
-    "sk-61e17513b4c14813a996a02f75b4cf94",
-]
-for i, key in enumerate(qwen_keys, 1):
+for i, key in enumerate(config.QWEN_KEYS, 1):
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key, base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1")

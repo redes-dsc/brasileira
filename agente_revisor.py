@@ -47,7 +47,7 @@ MAPA_UNIFICADO_AUTORES = {
 
     "gov.br/mme": 32, "gov.br/portos": 36, "gov.br/mda": 19, "gov.br/mds": 20, 
 
-    "gov.br/mdic": 21, "gov.br/memp": 24, "gov.br/esporte": 25, "gov.br/mma": 31, 
+    "gov.br/mdic": 21, "gov.br/memp": 24, "gov.br/esportes": 25, "gov.br/mma": 31, 
 
     "gov.br/planejamento": 35, "gov.br/trabalho": 41, "gov.br/turismo": 43, 
 
@@ -208,11 +208,9 @@ def diagnosticar_e_corrigir(url_orig, cat_atual, autor_atual, titulo, conteudo, 
     cat_correta = adivinhar_categoria(url_orig, titulo, conteudo)
 
     lista_sug = cat_correta if isinstance(cat_correta, list) else [cat_correta]
-
     
-
-    if 1 in cat_atual_ints or not all(c in cat_atual_ints for c in lista_sug):
-
+    # Substituir apenas se estiver vazio ou categorizado em 'Uncategorized' (1)
+    if not cat_atual_ints or (len(cat_atual_ints) == 1 and 1 in cat_atual_ints):
         correcoes['categories'] = lista_sug
 
 
@@ -297,10 +295,8 @@ def executar_auditoria_continua():
 
     
 
-    while True:
-
+    while pagina <= 25: # Hard limit para evitar max overhead na API
         res = requests.get(f"{WP_URL}/posts?per_page=50&page={pagina}", headers=AUTH_HEADERS)
-
         if res.status_code != 200: break
 
             
@@ -399,9 +395,8 @@ def executar_auditoria_continua():
 
             }
 
-            salvar_controle(controle)
-
-            
+        # Salva o log apenas uma vez por página para evitar sobrecarga I/O massiva
+        salvar_controle(controle)
 
         pagina += 1
 

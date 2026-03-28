@@ -17,6 +17,7 @@ Agendamento (crontab):
 
 import json
 import logging
+import logging.handlers
 import os
 import re
 import sys
@@ -33,6 +34,10 @@ sys.path.insert(0, str(Path("/home/bitnami/motor_scrapers")))
 sys.path.insert(0, str(Path("/home/bitnami")))
 
 from config_consolidado import TIER1_PORTALS, STOPWORDS_PT, LOG_DIR
+from scraper_homes import scrape_all_portals
+from detector_trending import detect_trending
+import unicodedata
+from llm_router import call_llm, TIER_CONSOLIDATOR
 import config
 import db
 
@@ -50,7 +55,7 @@ def _setup_logging():
         return  # avoid duplicate handlers
     logger.setLevel(logging.INFO)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    fh = logging.FileHandler(LOG_DIR / "benchmark_cron.log", encoding="utf-8")
+    fh = logging.handlers.TimedRotatingFileHandler(LOG_DIR / "benchmark_cron.log", when="midnight", backupCount=7, encoding="utf-8")
     fh.setFormatter(fmt)
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(fmt)
@@ -60,7 +65,7 @@ def _setup_logging():
 
 # ── Constantes ───────────────────────────────────────────
 
-SIMILARITY_MATCH = 0.40      # threshold para considerar "coberto"
+SIMILARITY_MATCH = 0.60      # threshold firme para evitar falsos positivos
 HOMEPAGE_WINDOW_HOURS = 6    # janela de posts recentes para comparar
 MAX_LLM_INPUT_CHARS = 6000   # limitar input do LLM
 
@@ -91,24 +96,23 @@ def fetch_brasileira_homepage() -> dict:
             # Posts com tags home-* nas últimas N horas
             cursor.execute(f"""
                 SELECT p.ID, p.post_title, p.post_date, p.post_excerpt,
-                       t.slug as tag_slug,
-                       (SELECT GROUP_CONCAT(t2.name SEPARATOR ', ')
-                        FROM {prefix}term_relationships tr2
-                        JOIN {prefix}term_taxonomy tt2 ON tr2.term_taxonomy_id = tt2.term_taxonomy_id
-                        JOIN {prefix}terms t2 ON tt2.term_id = t2.term_id
-                        WHERE tr2.object_id = p.ID AND tt2.taxonomy = 'category'
-                       ) as categories
+                       MAX(IF(tt.taxonomy='post_tag' AND t.slug LIKE 'home-%%', t.slug, NULL)) as tag_slug,
+                       GROUP_CONCAT(DISTINCT IF(tt2.taxonomy='category', t2.name, NULL) SEPARATOR ', ') as categories
                 FROM {prefix}posts p
                 JOIN {prefix}term_relationships tr ON p.ID = tr.object_id
                 JOIN {prefix}term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
                 JOIN {prefix}terms t ON tt.term_id = t.term_id
+                LEFT JOIN {prefix}term_relationships tr2 ON p.ID = tr2.object_id
+                LEFT JOIN {prefix}term_taxonomy tt2 ON tr2.term_taxonomy_id = tt2.term_taxonomy_id
+                LEFT JOIN {prefix}terms t2 ON tt2.term_id = t2.term_id
                 WHERE p.post_status = 'publish'
                   AND p.post_type = 'post'
                   AND tt.taxonomy = 'post_tag'
                   AND t.slug LIKE 'home-%%'
                   AND p.post_date >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                GROUP BY p.ID
                 ORDER BY p.post_date DESC
-            """, (HOMEPAGE_WINDOW_HOURS * 2,))
+            """, (HOMEPAGE_WINDOW_HOURS,))
 
             for row in cursor.fetchall():
                 tag = row["tag_slug"]
@@ -130,22 +134,16 @@ def fetch_brasileira_homepage() -> dict:
             # Todos os posts recentes (para verificar cobertura)
             cursor.execute(f"""
                 SELECT p.ID, p.post_title, p.post_date,
-                       (SELECT GROUP_CONCAT(t2.name SEPARATOR ', ')
-                        FROM {prefix}term_relationships tr2
-                        JOIN {prefix}term_taxonomy tt2 ON tr2.term_taxonomy_id = tt2.term_taxonomy_id
-                        JOIN {prefix}terms t2 ON tt2.term_id = t2.term_id
-                        WHERE tr2.object_id = p.ID AND tt2.taxonomy = 'category'
-                       ) as categories,
-                       (SELECT GROUP_CONCAT(t3.slug SEPARATOR ',')
-                        FROM {prefix}term_relationships tr3
-                        JOIN {prefix}term_taxonomy tt3 ON tr3.term_taxonomy_id = tt3.term_taxonomy_id
-                        JOIN {prefix}terms t3 ON tt3.term_id = t3.term_id
-                        WHERE tr3.object_id = p.ID AND tt3.taxonomy = 'post_tag'
-                       ) as all_tags
+                       GROUP_CONCAT(DISTINCT IF(tt.taxonomy='category', t.name, NULL) SEPARATOR ', ') as categories,
+                       GROUP_CONCAT(DISTINCT IF(tt.taxonomy='post_tag', t.slug, NULL) SEPARATOR ',') as all_tags
                 FROM {prefix}posts p
+                LEFT JOIN {prefix}term_relationships tr ON p.ID = tr.object_id
+                LEFT JOIN {prefix}term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+                LEFT JOIN {prefix}terms t ON tt.term_id = t.term_id
                 WHERE p.post_status = 'publish'
                   AND p.post_type = 'post'
                   AND p.post_date >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                GROUP BY p.ID
                 ORDER BY p.post_date DESC
                 LIMIT 100
             """, (HOMEPAGE_WINDOW_HOURS,))
@@ -178,13 +176,11 @@ def fetch_brasileira_homepage() -> dict:
 
 def fetch_tier1_titles() -> list[dict]:
     """Raspa títulos dos portais TIER 1 via scraper_homes."""
-    from scraper_homes import scrape_all_portals
     return scrape_all_portals(cycle_number=1)
 
 
 def fetch_tier1_trending(titles: list[dict]) -> list[dict]:
     """Detecta temas trending nos portais TIER 1."""
-    from detector_trending import detect_trending
     return detect_trending(titles)
 
 
@@ -194,7 +190,6 @@ def fetch_tier1_trending(titles: list[dict]) -> list[dict]:
 
 def _normalize(text: str) -> str:
     """Normaliza para comparação."""
-    import unicodedata
     text = text.lower().strip()
     text = unicodedata.normalize("NFD", text)
     text = re.sub(r"[\u0300-\u036f]", "", text)
@@ -265,7 +260,11 @@ def analyze_coverage(trending: list[dict], homepage: dict) -> list[dict]:
 
 def calculate_metrics(homepage: dict) -> dict:
     """Calcula métricas de frescor e diversidade."""
-    now = datetime.now()
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+    except Exception:
+        now = datetime.now() - timedelta(hours=3)
     metrics = {}
 
     # Frescor da manchete
@@ -341,7 +340,6 @@ def llm_editorial_review(gaps: list[dict], metrics: dict, homepage: dict) -> dic
     Envia resumo ao LLM para avaliação editorial e sugestões.
     Usa TIER_CONSOLIDATOR (Claude → GPT-4o → Gemini Pro) para análise premium.
     """
-    from llm_router import call_llm, TIER_CONSOLIDATOR
 
     # Montar resumo dos dados
     manchete_title = homepage["manchete"][0]["title"] if homepage["manchete"] else "(sem manchete)"
@@ -426,6 +424,12 @@ def generate_report(gaps: list[dict], metrics: dict, llm_review: dict | None, ho
     """Gera relatório MD (legível) e JSON (estruturado)."""
 
     now = datetime.now()
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+    except Exception:
+        now = datetime.now() - timedelta(hours=3)
+        
     timestamp = now.strftime("%Y-%m-%d %H:%M")
     file_prefix = now.strftime("%Y-%m-%d_%H")
 
@@ -569,6 +573,10 @@ def run_benchmark(quick: bool = False) -> dict:
 
     tier1_titles = fetch_tier1_titles()
     logger.info("TIER 1: %d títulos raspados", len(tier1_titles))
+    
+    if not tier1_titles:
+        logger.error("Nenhum título TIER 1 coletado. Abortando benchmark para evitar métricas viciadas.")
+        return {"error": "Falha na coleta TIER 1", "timestamp": datetime.now().isoformat()}
 
     # Phase 2: Coverage Gap
     logger.info("----- PHASE 2: Coverage Analysis -----")

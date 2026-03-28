@@ -7,6 +7,7 @@ Atualiza wp_7_postmeta.tdc_content e wp_7_posts.post_content para o post 18135.
 import subprocess
 import sys
 import os
+import pymysql
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,61 +42,52 @@ with open(INPUT_FILE, "r", encoding="utf-8") as f:
 
 print(f"Conteúdo novo: {len(new_content)} bytes")
 
-# Escape for MySQL
-escaped = new_content.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+# Conectar e aplicar via PyMySQL
+try:
+    conn = pymysql.connect(
+        host='127.0.0.1',
+        user='bn_wordpress',
+        password=os.getenv("DB_PASS"),
+        database='bitnami_wordpress',
+        port=3306,
+        autocommit=True
+    )
+    with conn.cursor() as cursor:
+        print("\n--- Atualizando tdc_content ---")
+        cursor.execute(
+            "UPDATE wp_7_postmeta SET meta_value=%s WHERE post_id=18135 AND meta_key='tdc_content'",
+            (new_content,)
+        )
+        print("✓ tdc_content atualizado!")
 
-# Build MySQL update commands
-sql1 = f"UPDATE wp_7_postmeta SET meta_value='{escaped}' WHERE post_id=18135 AND meta_key='tdc_content';"
-sql2 = f"UPDATE wp_7_posts SET post_content='{escaped}' WHERE ID=18135;"
+    # Verify
+    print("\n--- Verificação ---")
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT LENGTH(meta_value) FROM wp_7_postmeta WHERE post_id=18135 AND meta_key='tdc_content'")
+        len_val = cursor.fetchone()[0]
+        print(f"Tamanho no DB: {len_val}")
+        
+    # Check tag_slugs in DB content
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT meta_value FROM wp_7_postmeta WHERE post_id=18135 AND meta_key='tdc_content'")
+        db_content = cursor.fetchone()[0]
+        import re
+        tag_slugs = re.findall(r'tag_slug="([^"]*)"', db_content)
+        print(f"\ntag_slugs no DB: {len_val and len(tag_slugs)}")
+        for ts in tag_slugs:
+            print(f"  ✓ {ts}")
 
-# Write SQL to temp files
-sql_file1 = "/tmp/update_homepage_tags.sql"
-sql_file2 = "/tmp/update_homepage_tags_post.sql"
-
-with open(sql_file1, "w", encoding="utf-8") as f:
-    f.write(sql1)
-with open(sql_file2, "w", encoding="utf-8") as f:
-    f.write(sql2)
-
-print(f"SQL tdc_content: {sql_file1} ({len(sql1)} bytes)")
-print(f"SQL post_content: {sql_file2} ({len(sql2)} bytes)")
-
-# Execute
-print("\n--- Atualizando tdc_content ---")
-r1 = subprocess.run(db_cmd, stdin=open(sql_file1, "r"), capture_output=True, text=True, timeout=30)
-if r1.returncode == 0:
-    print("✓ tdc_content atualizado!")
-else:
-    print(f"✗ Erro: {r1.stderr}")
-    sys.exit(1)
-
-print("\n--- Atualizando post_content ---")
-r2 = subprocess.run(db_cmd, stdin=open(sql_file2, "r"), capture_output=True, text=True, timeout=30)
-if r2.returncode == 0:
-    print("✓ post_content atualizado!")
-else:
-    print(f"✗ Erro: {r2.stderr}")
-
-# Verify
-print("\n--- Verificação ---")
-verify_sql = "SELECT LENGTH(meta_value) as len FROM wp_7_postmeta WHERE post_id=18135 AND meta_key='tdc_content';"
-r3 = subprocess.run(db_cmd + ["-e", verify_sql], capture_output=True, text=True, timeout=10)
-print(r3.stdout.strip())
-
-# Check tag_slugs in DB content
-check_sql = "SELECT meta_value FROM wp_7_postmeta WHERE post_id=18135 AND meta_key='tdc_content'"
-r4 = subprocess.run(db_cmd + ["-N", "-e", check_sql], capture_output=True, text=True, timeout=10)
-if r4.returncode == 0:
-    db_content = r4.stdout.strip()
-    import re
-    tag_slugs = re.findall(r'tag_slug="([^"]*)"', db_content)
-    print(f"\ntag_slugs no DB: {len(tag_slugs)}")
-    for ts in tag_slugs:
-        print(f"  ✓ {ts}")
+finally:
+    if 'conn' in locals() and conn:
+        conn.close()
 
 # Flush OPcache
 print("\n--- Limpando OPcache ---")
-subprocess.run(["sudo", "kill", "-USR2", "$(cat /opt/bitnami/php/var/run/php-fpm.pid)"],
-               shell=False, capture_output=True)
+try:
+    with open("/opt/bitnami/php/var/run/php-fpm.pid") as f:
+        pid = f.read().strip()
+    subprocess.run(["sudo", "kill", "-USR2", pid], check=False)
+except Exception as e:
+    print(f"Erro a limpar OPcache: {e}")
 
 print("\n✓ Concluído! Verifique a homepage em https://brasileira.news")

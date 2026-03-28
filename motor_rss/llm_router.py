@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import time
+import threading
 
 import config
 
@@ -24,61 +25,77 @@ logger = logging.getLogger("motor_rss")
 # ─── Circuit Breaker ─────────────────────────────────
 
 _circuit_breaker: dict[str, dict] = {}
+_cb_lock = threading.Lock()
 CIRCUIT_BREAKER_THRESHOLD = 3    # bloqueia após N falhas consecutivas
 CIRCUIT_BREAKER_COOLDOWN = 1800  # 30 min de cooldown
 
 
 def _cb_is_open(provider: str) -> bool:
     """Verifica se o circuit breaker está aberto (provider bloqueado)."""
-    state = _circuit_breaker.get(provider)
-    if not state:
+    with _cb_lock:
+        state = _circuit_breaker.get(provider)
+        if not state:
+            return False
+        if state["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
+            if time.time() < state["blocked_until"]:
+                return True
+            logger.info("Circuit breaker reset para %s (cooldown expirou)", provider)
+            _circuit_breaker.pop(provider, None)
+            return False
         return False
-    if state["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
-        if time.time() < state["blocked_until"]:
-            return True
-        logger.info("Circuit breaker reset para %s (cooldown expirou)", provider)
-        _circuit_breaker.pop(provider, None)
-        return False
-    return False
 
 
 def _cb_record_failure(provider: str):
     """Registra uma falha no circuit breaker."""
-    state = _circuit_breaker.setdefault(provider, {"failures": 0, "blocked_until": 0})
-    state["failures"] += 1
-    if state["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
+    with _cb_lock:
+        state = _circuit_breaker.setdefault(provider, {"failures": 0, "blocked_until": 0})
+        state["failures"] += 1
+        if state["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
+            state["blocked_until"] = time.time() + CIRCUIT_BREAKER_COOLDOWN
+            logger.warning(
+                "Circuit breaker ABERTO para %s (%d falhas). Bloqueado por %ds.",
+                provider, state["failures"], CIRCUIT_BREAKER_COOLDOWN,
+            )
+
+
+def _cb_force_open(provider: str):
+    """Abre o circuit breaker imediatamente (ex: erro de crédito)."""
+    with _cb_lock:
+        state = _circuit_breaker.setdefault(provider, {"failures": 0, "blocked_until": 0})
+        state["failures"] = CIRCUIT_BREAKER_THRESHOLD
         state["blocked_until"] = time.time() + CIRCUIT_BREAKER_COOLDOWN
-        logger.warning(
-            "Circuit breaker ABERTO para %s (%d falhas). Bloqueado por %ds.",
-            provider, state["failures"], CIRCUIT_BREAKER_COOLDOWN,
-        )
+        logger.warning("Circuit breaker FORÇADO ABERTO para %s.", provider)
 
 
 def _cb_record_success(provider: str):
     """Registra um sucesso — reseta o circuit breaker."""
-    if provider in _circuit_breaker:
-        _circuit_breaker.pop(provider)
+    with _cb_lock:
+        if provider in _circuit_breaker:
+            _circuit_breaker.pop(provider)
 
 
 # ─── Key Rotation ────────────────────────────────────
 
 _key_index: dict[str, int] = {}
+_key_lock = threading.Lock()
 
 
 def _next_key(provider: str, keys: list[str]) -> str | None:
-    """Retorna a próxima key em rotação round-robin."""
+    """Retorna a próxima key em rotação round-robin de forma thread-safe."""
     if not keys:
         return None
-    idx = _key_index.get(provider, 0) % len(keys)
-    _key_index[provider] = idx + 1
-    return keys[idx]
+    with _key_lock:
+        idx = _key_index.get(provider, 0) % len(keys)
+        _key_index[provider] = idx + 1
+        return keys[idx]
 
 
 def _rotate_key(provider: str, keys: list[str]):
     """Força rotação para a próxima key (chamado após rate limit)."""
     if len(keys) > 1:
-        _key_index[provider] = _key_index.get(provider, 0) + 1
-        logger.info("Key rotacionada para %s (key #%d)", provider, _key_index[provider] % len(keys) + 1)
+        with _key_lock:
+            idx = _key_index.get(provider, 0)
+            logger.info("Rate Limit superado no %s. Como o sistema usa Round-Robin contínuo, a próxima chave natural (key #%d) já assumirá o fluxo.", provider, (idx % len(keys)) + 1)
 
 
 # ─── JSON Parsing ────────────────────────────────────
@@ -130,14 +147,14 @@ def _validate_response(data: dict) -> bool:
 # Usados para redação editorial, conteúdo de destaque, fontes governamentais
 
 def _call_openai_premium(system_prompt: str, user_prompt: str) -> str:
-    """GPT-4.1 — flagship OpenAI, melhor qualidade de redação e JSON."""
+    """GPT-4o — flagship OpenAI, melhor qualidade de redação e JSON."""
     key = _next_key("openai", config.OPENAI_KEYS)
     if not key:
         raise ValueError("Nenhuma OPENAI_API_KEY configurada")
     from openai import OpenAI
     client = OpenAI(api_key=key)
     response = client.chat.completions.create(
-        model="gpt-4.1",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -190,7 +207,7 @@ def _call_gemini_premium(system_prompt: str, user_prompt: str) -> str:
         raise ValueError("Nenhuma GEMINI_API_KEY configurada")
     from google import genai
     from google.genai import types
-    client = genai.Client(api_key=key)
+    client = genai.Client(api_key=key, http_options={"timeout": config.LLM_TIMEOUT})
     response = client.models.generate_content(
         model="gemini-2.5-pro",
         contents=user_prompt,
@@ -211,7 +228,7 @@ def _call_gemini(system_prompt: str, user_prompt: str) -> str:
         raise ValueError("Nenhuma GEMINI_API_KEY configurada")
     from google import genai
     from google.genai import types
-    client = genai.Client(api_key=key)
+    client = genai.Client(api_key=key, http_options={"timeout": config.LLM_TIMEOUT})
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=user_prompt,
@@ -223,14 +240,14 @@ def _call_gemini(system_prompt: str, user_prompt: str) -> str:
 
 
 def _call_openai(system_prompt: str, user_prompt: str) -> str:
-    """GPT-4.1 Mini — confiável, bom JSON, econômico."""
+    """GPT-4o-Mini — confiável, bom JSON, econômico."""
     key = _next_key("openai", config.OPENAI_KEYS)
     if not key:
         raise ValueError("Nenhuma OPENAI_API_KEY configurada")
     from openai import OpenAI
     client = OpenAI(api_key=key)
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -314,14 +331,14 @@ def _call_claude_haiku(system_prompt: str, user_prompt: str) -> str:
 
 
 def _call_openai_nano(system_prompt: str, user_prompt: str) -> str:
-    """GPT-4.1 Nano — mais barato da OpenAI, bom para tarefas simples."""
+    """GPT-4o-Mini (Nano Fallback) — mais barato da OpenAI."""
     key = _next_key("openai", config.OPENAI_KEYS)
     if not key:
         raise ValueError("Nenhuma OPENAI_API_KEY configurada")
     from openai import OpenAI
     client = OpenAI(api_key=key)
     response = client.chat.completions.create(
-        model="gpt-4.1-nano",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -1113,6 +1130,10 @@ def classify_tier(
     """
     source_lower = source.lower()
 
+    # Fontes de altissimo potencial sempre ficam no Premium
+    if score >= 70 and content_length >= 3000:
+        return 1
+
     # Fontes institucionais/governo → TIER 2 (reescrita editorial)
     if any(gov in source_lower for gov in _INSTITUTIONAL_SOURCES):
         return 2
@@ -1121,7 +1142,11 @@ def classify_tier(
     if feed_tema in _INSTITUTIONAL_THEMES:
         return 2
 
-    # Tudo que é imprensa → TIER 1 (consolidação analítica premium)
+    # Imprensa padrao
+    # Mas se for materia muito curta ou de baixo score cai pro Standard T2 para economizar
+    if content_length > 0 and content_length < 1000:
+        return 2
+        
     return 1
 
 
@@ -1152,18 +1177,20 @@ def generate_article(
     
     ok, usage = gestor_budget.check_budget_ok()
     if not ok:
-        logger.error("BUDGET EXCEDIDO (%d chamadas hoje). Abortando geração.", usage)
+        logger.critical("BUDGET EXCEDIDO (%d chamadas hoje). Abortando geração.", usage)
         return None, "budget_limit"
 
     providers = _TIER_MAP.get(tier, _TIER2_PROVIDERS)
 
     system_prompt = config.LLM_SYSTEM_PROMPT
-    # Truncar conteúdo com indicação (bug 6.5)
-    MAX_CONTENT = 6000
-    truncated_content = content[:MAX_CONTENT]
-    if len(content) > MAX_CONTENT:
-        truncated_content += "\n\n[... conteúdo truncado em 6000 caracteres ...]"
-    
+    # Truncar conteúdo com limite de tokens aproximado (palavras limitadas a 1500)
+    MAX_WORDS = 1500
+    words = content.split()
+    if len(words) > MAX_WORDS:
+        truncated_content = " ".join(words[:MAX_WORDS])
+        truncated_content += "\n\n[... conteúdo truncado limite de palavras ...]"
+    else:
+        truncated_content = content
     user_prompt = config.LLM_REWRITE_PROMPT_TEMPLATE.format(
         title=title,
         content=truncated_content,
@@ -1176,7 +1203,7 @@ def generate_article(
 
     for provider_name, call_fn, keys in providers:
         # Circuit breaker usa nome base do provider (sem modelo)
-        cb_name = provider_name.split(":")[0]
+        cb_name = provider_name
 
         if _cb_is_open(cb_name):
             logger.debug("Circuit breaker aberto para %s — pulando.", cb_name)
@@ -1210,9 +1237,7 @@ def generate_article(
             error_msg = str(e).lower()
 
             if any(kw in error_msg for kw in _CREDIT_KEYWORDS):
-                logger.warning("Erro de crédito/billing no %s: %s", provider_name, e)
-                for _ in range(CIRCUIT_BREAKER_THRESHOLD):
-                    _cb_record_failure(cb_name)
+                _cb_force_open(cb_name)
                 continue
 
             if any(kw in error_msg for kw in _RATE_LIMIT_KEYWORDS):
@@ -1243,7 +1268,7 @@ def call_llm(
     
     ok, usage = gestor_budget.check_budget_ok()
     if not ok:
-        logger.error("BUDGET EXCEDIDO (%d chamadas hoje). Abortando call_llm.", usage)
+        logger.critical("BUDGET EXCEDIDO (%d chamadas hoje). Abortando call_llm.", usage)
         return None, "budget_limit"
 
     providers = _TIER_MAP.get(tier, _TIER2_PROVIDERS)
@@ -1251,7 +1276,7 @@ def call_llm(
     logger.info("call_llm [TIER %s] — prompt: %s...", tier, user_prompt[:50])
 
     for provider_name, call_fn, keys in providers:
-        cb_name = provider_name.split(":")[0]
+        cb_name = provider_name
 
         if _cb_is_open(cb_name):
             logger.debug("Circuit breaker aberto para %s — pulando.", cb_name)
@@ -1264,16 +1289,17 @@ def call_llm(
             elapsed = time.time() - start
             logger.info("LLM %s respondeu em %.1fs", provider_name, elapsed)
 
-            _cb_record_success(cb_name)
-            
-            # Registrar no budget
-            import gestor_budget
-            gestor_budget.registrar_chamada(provider_name)
-
             if parse_json:
                 data = _parse_llm_json(raw)
+                # Só registra SUCCESS se a validação/parse do Json passar sem Throw
+                _cb_record_success(cb_name)
+                import gestor_budget
+                gestor_budget.registrar_chamada(provider_name)
                 return data, provider_name
             else:
+                _cb_record_success(cb_name)
+                import gestor_budget
+                gestor_budget.registrar_chamada(provider_name)
                 return raw.strip(), provider_name
 
         except json.JSONDecodeError as e:
@@ -1283,9 +1309,7 @@ def call_llm(
             error_msg = str(e).lower()
 
             if any(kw in error_msg for kw in _CREDIT_KEYWORDS):
-                logger.warning("Erro de crédito/billing no %s: %s", provider_name, e)
-                for _ in range(CIRCUIT_BREAKER_THRESHOLD):
-                    _cb_record_failure(cb_name)
+                _cb_force_open(cb_name)
                 continue
 
             if any(kw in error_msg for kw in _RATE_LIMIT_KEYWORDS):

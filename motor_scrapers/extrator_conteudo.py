@@ -90,50 +90,34 @@ def _fetch_html(url: str) -> tuple[str, str]:
 def _extrair_via_newspaper(url: str, html: str) -> dict | None:
 
     try:
-
         from newspaper import Article
-
         article = Article(url, language="pt")
-
         article.download(input_html=html)
-
         article.parse()
 
         titulo = article.title or ""
-
         texto = article.text or ""
-
         autores = article.authors or []
-
         data = article.publish_date
-
         imagem = article.top_image or ""
 
         if len(texto.split()) < _MIN_PALAVRAS:
-
             return None
-
         return {
-
             "titulo": titulo,
-
-            "conteudo": texto,
-
+            "conteudo": texto[:15000],
             "autor": ", ".join(autores) if autores else "",
-
             "data": str(data) if data else "",
-
             "imagem": imagem,
-
             "metodo": "newspaper3k",
-
         }
 
     except Exception as e:
-
         logger.debug("newspaper3k falhou para %s: %s", url[:80], e)
-
         return None
+    finally:
+        if 'article' in locals():
+            del article
 
 
 

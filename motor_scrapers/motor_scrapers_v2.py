@@ -13,11 +13,14 @@ Reutiliza módulos da Raia 1: config, db, llm_router, wp_publisher, image_handle
 
 
 
+import argparse
+
 import fcntl
 
 import json
 
 import logging
+import logging.handlers
 
 import os
 
@@ -29,7 +32,7 @@ import sys
 
 import time
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED, TimeoutError as FuturesTimeoutError
 
 from datetime import datetime, timedelta, timezone
 
@@ -46,19 +49,22 @@ import chardet
 import feedparser
 
 import requests
-
 from bs4 import BeautifulSoup
+import cloudscraper
+
+_CLOUDSCRAPER = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
 
 
 
 _RAIA1_DIR = Path("/home/bitnami/motor_rss")
-
 if _RAIA1_DIR.exists():
-
     sys.path.insert(0, str(_RAIA1_DIR))
 
+sys.path.insert(0, "/home/bitnami")
 
 
+
+from curador_imagens_unificado import is_official_source
 import config
 
 import db
@@ -83,7 +89,7 @@ def setup_logging():
 
     formatter = logging.Formatter("%(asctime)s | %(levelname)-7s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = logging.handlers.TimedRotatingFileHandler(log_file, when="midnight", backupCount=7, encoding="utf-8")
 
     file_handler.setFormatter(formatter)
 
@@ -119,7 +125,7 @@ SCORE_MIN = 40
 
 SCORE_GOV_BONUS = 10
 
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = (10, 20)  # (connect_timeout, read_timeout) in seconds
 
 MAX_WORKERS = 5
 
@@ -207,40 +213,28 @@ def _block_domain(domain, hours=1.0):
 
 
 
-_robots_cache: dict = {}
+from functools import lru_cache
 
-
+@lru_cache(maxsize=100)
+def _get_robot_parser(base_url):
+    from urllib.robotparser import RobotFileParser
+    rp = RobotFileParser()
+    try:
+        rp.set_url(f"{base_url}/robots.txt")
+        rp.read()
+    except Exception:
+        pass
+    return rp
 
 def _check_robots(url):
-
+    from urllib.parse import urlparse
     parsed = urlparse(url)
-
     base = f"{parsed.scheme}://{parsed.netloc}"
-
-    if base not in _robots_cache:
-
-        rp = RobotFileParser()
-
-        try:
-
-            rp.set_url(f"{base}/robots.txt")
-
-            rp.read()
-
-            _robots_cache[base] = rp
-
-        except Exception:
-
-            _robots_cache[base] = RobotFileParser()
-
-    rp = _robots_cache[base]
-
+    rp = _get_robot_parser(base)
+    
     allowed = rp.can_fetch(_DEFAULT_HEADERS["User-Agent"], url)
-
     if not allowed:
-
         logger.debug("Bloqueado por robots.txt: %s", url[:80])
-
     return allowed
 
 
@@ -267,15 +261,25 @@ def load_scrapers():
 
 
 
+import threading
+from collections import defaultdict
+_domain_locks = defaultdict(threading.Lock)
+_domain_last_req = {}
+
+def _wait_for_domain(domain):
+    with _domain_locks[domain]:
+        elapsed = time.time() - _domain_last_req.get(domain, 0)
+        if elapsed < DOMAIN_DELAY_MIN:
+            time.sleep(DOMAIN_DELAY_MIN - elapsed)
+        _domain_last_req[domain] = time.time()
+
 def _fetch_with_retry(url, retries=3, timeout=REQUEST_TIMEOUT):
-
+    domain = urlparse(url).netloc
+    _wait_for_domain(domain)
+    
     for attempt in range(retries):
-
         try:
-
-            import cloudscraper
-            scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
-            resp = scraper.get(url, headers=_DEFAULT_HEADERS, timeout=timeout, allow_redirects=True)
+            resp = _CLOUDSCRAPER.get(url, headers=_DEFAULT_HEADERS, timeout=timeout, allow_redirects=True)
 
             if resp.status_code in (429, 503):
 
@@ -932,7 +936,6 @@ def processar_artigo(artigo, categories):
     keywords = " ".join(article_data.get("tags",[])[:3])
 
     # Pipeline de imagem unificado — mesmo padrão para todas as raias
-    sys.path.insert(0, str(Path("/home/bitnami")))
     from curador_imagens_unificado import is_official_source
     source_is_official = is_official_source(url)
 
@@ -1062,6 +1065,9 @@ def run_cycle():
 
     domain_last_request = {}
 
+    # Global timeout for entire link collection phase (120 seconds)
+    COLLECTION_TIMEOUT = 120
+    
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
 
         futures = {}
@@ -1072,39 +1078,34 @@ def run_cycle():
 
                 break
 
-            domain = urlparse(fonte.get("url_noticias", fonte.get("url_home",""))).netloc
-
-            last = domain_last_request.get(domain, 0)
-
-            elapsed = time.time() - last
-
-            if elapsed < DOMAIN_DELAY_MIN:
-
-                time.sleep(DOMAIN_DELAY_MIN - elapsed)
-
             future = executor.submit(coletar_links_fonte, fonte)
-
             futures[future] = fonte
 
-            domain_last_request[domain] = time.time()
-
-        for future in as_completed(futures):
-
-            fonte = futures[future]
-
-            try:
-
-                artigos = future.result()
-
-                for a in artigos:
-
-                    a["peso"] = fonte.get("peso", 3)
-
-                all_artigos.extend(artigos)
-
-            except Exception as e:
-
-                logger.error("Erro ao coletar %s: %s", fonte.get("nome","?"), e, exc_info=True)
+        # Use wait() with timeout to prevent hanging on stuck sources
+        pending = set(futures.keys())
+        collection_start = time.time()
+        
+        while pending and (time.time() - collection_start) < COLLECTION_TIMEOUT:
+            # Wait for any future to complete, with 30s chunks
+            done, pending = wait(pending, timeout=30, return_when=FIRST_COMPLETED)
+            
+            for future in done:
+                fonte = futures[future]
+                try:
+                    artigos = future.result(timeout=1)  # Should be instant since it's done
+                    for a in artigos:
+                        a["peso"] = fonte.get("peso", 3)
+                    all_artigos.extend(artigos)
+                except Exception as e:
+                    logger.error("Erro ao coletar %s: %s", fonte.get("nome","?"), e)
+        
+        # Cancel any remaining stuck futures
+        if pending:
+            logger.warning("Timeout na coleta! %d fontes não responderam a tempo:", len(pending))
+            for future in pending:
+                fonte = futures.get(future, {})
+                logger.warning("  - %s (cancelando)", fonte.get("nome", "?"))
+                future.cancel()
 
     logger.info("Total de artigos coletados: %d", len(all_artigos))
 
@@ -1192,6 +1193,8 @@ def run_cycle():
 
     logger.info("=" * 60)
 
+    return published_count, failed_count
+
 
 
 
@@ -1255,7 +1258,23 @@ def release_lock():
             pass
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Motor Scrapers v2 (Raia 2) — brasileira.news")
+    parser.add_argument('--single-cycle', action='store_true', 
+                        help='Run one cycle and exit (same as default behavior)')
+    return parser.parse_args()
+
+
 def main():
+
+    args = parse_args()
+    
+    # Log mode
+    if args.single_cycle:
+        logger.info("Running in single-cycle mode")
+    else:
+        logger.info("Running in continuous mode (single cycle for cron)")
 
     if not acquire_lock():
         logger.warning("Outra instância do Motor Scrapers v2 já está em execução. Saindo.")
@@ -1279,16 +1298,21 @@ def main():
 
         logger.error("Erro ao verificar tabela de controle: %s", e)
 
+    published = 0
+    failed = 0
     try:
-
-        run_cycle()
-
+        result = run_cycle()
+        if result:
+            published, failed = result
+        logger.info("Single cycle complete — Published: %d | Failed: %d", published, failed)
     except Exception as e:
-
         logger.error("Erro fatal no ciclo: %s", e, exc_info=True)
+        release_lock()
+        sys.exit(1)
 
     release_lock()
     logger.info("Motor Scrapers v2 encerrado.")
+    sys.exit(0)
 
 
 

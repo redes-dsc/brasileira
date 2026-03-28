@@ -32,6 +32,7 @@ class RSSFetcher:
                 timeout=httpx.Timeout(FEED_FETCH_TIMEOUT),
                 limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
                 follow_redirects=True,
+                http2=True,
                 headers={"User-Agent": USER_AGENT},
             )
         return self._http

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -20,10 +21,12 @@ DEFAULT_PLAYWRIGHT_TIMEOUT_MS = 45000
 class ScraperEngine:
     """Extrai artigos de fontes scraper estáticas ou JS-heavy."""
 
-    def __init__(self):
+    def __init__(self, max_concurrent: int = 10):
         self._http: Optional[httpx.AsyncClient] = None
         self._playwright = None
         self._browser = None
+        self._browser_lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(max_concurrent)
 
     async def start(self) -> None:
         """Inicializa recursos de scraping."""
@@ -49,19 +52,20 @@ class ScraperEngine:
             await self._http.aclose()
 
     async def _ensure_browser(self):
-        if self._playwright is None:
-            from playwright.async_api import async_playwright
+        async with self._browser_lock:
+            if self._playwright is None:
+                from playwright.async_api import async_playwright
 
-            self._playwright = await async_playwright().start()
-        if self._browser is None:
-            self._browser = await self._playwright.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
+                self._playwright = await async_playwright().start()
+            if self._browser is None:
+                self._browser = await self._playwright.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                    ],
+                )
 
     def _extract_with_soup(self, html: str, base_url: str, selectors: list[str], limit: int = 200) -> list[dict]:
         soup = BeautifulSoup(html, "lxml")
@@ -84,57 +88,57 @@ class ScraperEngine:
 
     async def collect(self, source_config: dict) -> list[dict]:
         """Coleta artigos de fonte scraper."""
+        async with self._semaphore:
+            if self._http is None or self._http.is_closed:
+                await self.start()
 
-        if self._http is None or self._http.is_closed:
-            await self.start()
+            base_url = source_config["url"]
+            fonte_id = source_config["fonte_id"]
+            fonte_nome = source_config.get("nome", "desconhecido")
+            config = source_config.get("config_scraper") or {}
+            selectors = config.get("selectors") or ["a[href]"]
+            needs_js = bool(config.get("needs_javascript", False))
 
-        base_url = source_config["url"]
-        fonte_id = source_config["fonte_id"]
-        fonte_nome = source_config.get("nome", "desconhecido")
-        config = source_config.get("config_scraper") or {}
-        selectors = config.get("selectors") or ["a[href]"]
-        needs_js = bool(config.get("needs_javascript", False))
+            html: str
+            if needs_js:
+                await self._ensure_browser()
+                context = await self._browser.new_context()
+                page = await context.new_page()
+                try:
+                    await page.goto(base_url, wait_until="domcontentloaded", timeout=DEFAULT_PLAYWRIGHT_TIMEOUT_MS)
+                    html = await page.content()
+                finally:
+                    await page.close()
+                    await context.close()
+            else:
+                response = await self._http.get(base_url)
+                response.raise_for_status()
+                html = response.text
 
-        html: str
-        if needs_js:
-            await self._ensure_browser()
-            context = await self._browser.new_context()
-            page = await context.new_page()
-            try:
-                await page.goto(base_url, wait_until="domcontentloaded", timeout=DEFAULT_PLAYWRIGHT_TIMEOUT_MS)
-                html = await page.content()
-            finally:
-                await page.close()
-                await context.close()
-        else:
-            response = await self._http.get(base_url)
-            response.raise_for_status()
-            html = response.text
+            extracted = self._extract_with_soup(html, base_url, selectors)
+            now = datetime.now(timezone.utc).isoformat()
+            group = config.get("grupo", "geral")
 
-        extracted = self._extract_with_soup(html, base_url, selectors)
-        now = datetime.now(timezone.utc).isoformat()
-        group = config.get("grupo", "geral")
-
-        articles: list[dict] = []
-        for item in extracted:
-            url = item["url"]
-            title = item["titulo"]
-            url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
-            articles.append(
-                {
-                    "titulo": title,
-                    "url": url,
-                    "url_hash": url_hash,
-                    "data_publicacao": None,
-                    "resumo": "",
-                    "og_image": None,
-                    "fonte_id": fonte_id,
-                    "fonte_nome": fonte_nome,
-                    "grupo": group,
-                    "tipo_coleta": "scraper",
-                    "coletado_em": now,
-                    "near_duplicate": False,
-                    "near_duplicate_of": None,
-                }
-            )
-        return articles
+            articles: list[dict] = []
+            for item in extracted:
+                url = item["url"]
+                title = item["titulo"]
+                url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+                articles.append(
+                    {
+                        "titulo": title,
+                        "url": url,
+                        "url_hash": url_hash,
+                        "data_publicacao": None,
+                        "resumo": "",
+                        "og_image": None,
+                        "fonte_id": fonte_id,
+                        "fonte_nome": fonte_nome,
+                        "grupo": group,
+                        "tipo_coleta": "scraper",
+                        "coletado_em": now,
+                        "near_duplicate": False,
+                        "near_duplicate_of": None,
+                    }
+                )
+            return articles

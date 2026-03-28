@@ -64,7 +64,9 @@ def _request_with_retry(
 
             resp = _wp_session.request(method, url, **kwargs)
 
-            if resp.status_code < 500:
+            if resp.status_code == 429:
+                logger.warning("HTTP 429 em %s. Rate limit atingido. Tentativa %d/%d", url, attempt + 1, retries)
+            elif resp.status_code < 500:
 
                 return resp
 
@@ -108,19 +110,24 @@ import html
 import db
 
 _category_cache: dict[str, int] = {}
+_category_cache_time = 0
 _tag_cache: dict[str, int] = {}
+_tag_cache_time = 0
+CACHE_TTL = 3600  # 1 hora
 
 
 def _load_categories_from_db() -> dict[str, int]:
-    """Carrega categorias direto do banco. Retorna {nome_normalizado: term_id}."""
-    global _category_cache
-    if _category_cache:
+    """Carrega categorias direto do banco com TTL de expiração."""
+    global _category_cache, _category_cache_time
+    if _category_cache and (time.time() - _category_cache_time < CACHE_TTL):
         return _category_cache
     try:
         raw = db.get_categories()  # {name: term_id}
+        _category_cache.clear()
         for name, tid in raw.items():
             normalized = html.unescape(name).lower().strip()
             _category_cache[normalized] = tid
+        _category_cache_time = time.time()
         logger.info("Cache de categorias (DB): %d entradas", len(_category_cache))
     except Exception as e:
         logger.warning("Erro ao carregar categorias do DB: %s", e)
@@ -128,15 +135,17 @@ def _load_categories_from_db() -> dict[str, int]:
 
 
 def _load_tags_from_db() -> dict[str, int]:
-    """Carrega tags direto do banco. Retorna {nome_normalizado: term_id}."""
-    global _tag_cache
-    if _tag_cache:
+    """Carrega tags direto do banco com TTL de expiração."""
+    global _tag_cache, _tag_cache_time
+    if _tag_cache and (time.time() - _tag_cache_time < CACHE_TTL):
         return _tag_cache
     try:
         raw = db.get_tags()  # {name: term_id}
+        _tag_cache.clear()
         for name, tid in raw.items():
             normalized = html.unescape(name).lower().strip()
             _tag_cache[normalized] = tid
+        _tag_cache_time = time.time()
         logger.info("Cache de tags (DB): %d entradas", len(_tag_cache))
     except Exception as e:
         logger.warning("Erro ao carregar tags do DB: %s", e)

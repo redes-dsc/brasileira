@@ -10,6 +10,7 @@ import sys
 import os
 import time
 import requests
+from datetime import datetime, timedelta
 from requests.auth import HTTPBasicAuth
 
 sys.path.insert(0, "/home/bitnami/motor_rss")
@@ -64,17 +65,18 @@ SEED_MAP = [
 ]
 
 
-def fetch_top_posts(category_id=None, per_page=10):
-    """Busca últimos posts publicados, opcionalmente filtrados por categoria."""
-    params = {
-        "per_page": per_page,
-        "status": "publish",
-        "orderby": "date",
-        "order": "desc",
-        "_fields": "id,title,tags,categories,featured_media",
-    }
-    if category_id:
-        params["categories"] = category_id
+    def fetch_top_posts(category_id=None, per_page=10):
+        seven_days_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
+        params = {
+            "per_page": per_page,
+            "status": "publish",
+            "orderby": "date",
+            "order": "desc",
+            "after": seven_days_ago,
+            "_fields": "id,title,tags,categories,featured_media",
+        }
+        if category_id:
+            params["categories"] = category_id
     
     resp = requests.get(
         f"{WP_API_BASE}/posts",
@@ -115,7 +117,11 @@ def main():
     total_errors = 0
     
     for tag_slug, cat_id, qty in SEED_MAP:
-        tag_id = TAG_IDS[tag_slug]
+        tag_id = TAG_IDS.get(tag_slug)
+        if not tag_id:
+            print(f"  ⚠ Tag slug {tag_slug} não mapeado no TAG_IDS.")
+            continue
+        
         cat_label = f"cat={cat_id}" if cat_id else "(todas)"
         print(f"[{tag_slug}] — buscando {qty} posts ({cat_label})")
         
@@ -123,7 +129,7 @@ def main():
         posts = fetch_top_posts(category_id=cat_id, per_page=qty * 2)
         
         if not posts:
-            print(f"  ⚠ Nenhum post encontrado para {cat_label}")
+            print(f"  ⚠ Nenhum post recente encontrado para {cat_label}")
             continue
         
         tagged_count = 0
@@ -135,10 +141,9 @@ def main():
             title = post["title"]["rendered"][:60] if isinstance(post["title"], dict) else str(post["title"])[:60]
             current_tags = post.get("tags", [])
             
-            # Para manchete/submanchete, evitar duplicatas
-            if tag_slug in ("home-manchete", "home-submanchete"):
-                if post_id in used_post_ids:
-                    continue
+            # Evitar reciclar qualquer post já clipado
+            if post_id in used_post_ids:
+                continue
             
             ok = add_tag_to_post(post_id, tag_id, current_tags)
             if ok:

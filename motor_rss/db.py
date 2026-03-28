@@ -10,7 +10,7 @@ Usa pymysql com connection pooling via DBUtils.
 
 
 import logging
-
+import threading
 from contextlib import contextmanager
 
 
@@ -32,30 +32,33 @@ logger = logging.getLogger("motor_rss")
 
 
 _pool = None
-
+_pool_lock = threading.Lock()
 
 def _get_pool():
-    """Retorna (ou cria) o pool de conexões global."""
+    """Retorna (ou cria) o pool de conexões global de forma thread-safe."""
     global _pool
     if _pool is None:
-        _pool = PooledDB(
-            creator=pymysql,
-            maxconnections=10,
-            mincached=2,
-            maxcached=5,
-            blocking=True,
-            host=config.DB_HOST,
-            port=config.DB_PORT,
-            user=config.DB_USER,
-            password=config.DB_PASS,
-            database=config.DB_NAME,
-            charset="utf8mb4",
-            collation="utf8mb4_general_ci",
-            autocommit=True,
-            cursorclass=pymysql.cursors.DictCursor,
-            ping=1,  # ping on checkout to detect stale connections
-        )
-        logger.info("Pool de conexões MariaDB criado (min=2, max=10)")
+        with _pool_lock:
+            # Check again inside lock to prevent race condition
+            if _pool is None:
+                _pool = PooledDB(
+                    creator=pymysql,
+                    maxconnections=10,
+                    mincached=2,
+                    maxcached=5,
+                    blocking=True,
+                    host=config.DB_HOST,
+                    port=config.DB_PORT,
+                    user=config.DB_USER,
+                    password=config.DB_PASS,
+                    database=config.DB_NAME,
+                    charset="utf8mb4",
+                    collation="utf8mb4_general_ci",
+                    autocommit=True,
+                    cursorclass=pymysql.cursors.DictCursor,
+                    ping=1,  # ping on checkout to detect stale connections
+                )
+                logger.info("Pool de conexões MariaDB criado (min=2, max=10)")
     return _pool
 
 
@@ -145,60 +148,30 @@ def post_exists(url: str, title: str) -> bool:
     """
 
     Verifica se um post já existe por URL exata.
-
     Checa tabela de controle e guid do WordPress.
-
     """
-
     with get_db() as conn:
+        with conn.cursor() as cursor:
+            # Checar URL exata na tabela de controle
+            cursor.execute(
+                f"SELECT 1 FROM {_t('rss_control')} WHERE source_url = %s LIMIT 1",
+                (url,),
+            )
+            if cursor.fetchone():
+                return True
 
-        cursor = conn.cursor()
-
-
-
-        # Checar URL exata na tabela de controle
-
-        cursor.execute(
-
-            f"SELECT 1 FROM {_t('rss_control')} WHERE source_url = %s LIMIT 1",
-
-            (url,),
-
-        )
-
-        if cursor.fetchone():
-
-            cursor.close()
-
-            return True
-
-
-
-        # Checar URL no guid dos posts WP
-
-        cursor.execute(
-
-            f"""
-
-            SELECT 1 FROM {_t('posts')}
-
-            WHERE guid = %s
-
-              AND post_status = 'publish'
-
-            LIMIT 1
-
-            """,
-
-            (url,),
-
-        )
-
-        result = cursor.fetchone()
-
-        cursor.close()
-
-        return result is not None
+            # Checar URL no guid dos posts WP
+            cursor.execute(
+                f"""
+                SELECT 1 FROM {_t('posts')}
+                WHERE guid = %s
+                  AND post_status = 'publish'
+                LIMIT 1
+                """,
+                (url,),
+            )
+            result = cursor.fetchone()
+            return result is not None
 
 
 
@@ -287,13 +260,9 @@ def register_published(post_id: int, source_url: str, feed_name: str, llm_used: 
         cursor.execute(
 
             f"""
-
-            INSERT INTO {_t('rss_control')}
-
+            INSERT IGNORE INTO {_t('rss_control')}
                 (post_id, source_url, feed_name, llm_used)
-
             VALUES (%s, %s, %s, %s)
-
             """,
 
             (post_id, source_url, feed_name, llm_used),

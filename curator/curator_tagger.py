@@ -29,16 +29,13 @@ def get_posts_with_curator_tags() -> list[dict]:
     all_posts = []
     
     for tag_slug, tag_id in cfg.TAG_IDS.items():
-        # Pular tags especiais que não são de posição
-        if tag_slug in ("consolidada", "home-urgente", "home-especial"):
-            continue
         
         try:
             resp = requests.get(
                 f"{cfg.WP_API_BASE}/posts",
                 params={
                     "tags": tag_id,
-                    "per_page": 20,
+                    "per_page": 100,
                     "status": "publish",
                     "_fields": "id,tags",
                 },
@@ -190,59 +187,94 @@ def apply_all_positions(selections: dict[str, list[int]],
     Returns:
         {tag_slug: {"applied": N, "errors": N}}
     """
-    results = {}
+    results = {tag_slug: {"applied": 0, "errors": 0} for tag_slug in selections}
     
-    # Primeiro: limpar tags antigas
-    logger.info("Limpando tags de curadoria anteriores...")
-    clear_curator_tags(dry_run=dry_run)
+    # 1. Mapear as tags de curadoria que controlamos
+    position_tag_ids = set()
+    for tag_slug, tag_id in cfg.TAG_IDS.items():
+        if tag_slug.startswith("home-") or tag_slug == "consolidada":
+            position_tag_ids.add(tag_id)
+            
+    # 2. Obter estado atual dos posts
+    logger.info("Buscando estado atual das tags de curadoria...")
+    current_posts = get_posts_with_curator_tags()
+    current_state = {p["id"]: set(p.get("tags", [])) for p in current_posts}
     
-    # Cache de tags atuais por post para evitar N+1 queries
-    post_tags_cache: dict[int, list[int]] = {}
-    
-    # Depois: aplicar novas
+    # 3. Construir estado desejado
+    desired_state = {}
     for tag_slug, post_ids in selections.items():
         tag_id = cfg.TAG_IDS.get(tag_slug)
         if not tag_id:
             logger.warning("Tag slug desconhecido: %s", tag_slug)
             continue
-        
-        applied = 0
-        errors = 0
-        
         for post_id in post_ids:
-            # Buscar tags atuais (usar cache se disponível)
-            current_tags = post_tags_cache.get(post_id)
-            if current_tags is None:
-                try:
-                    resp = requests.get(
-                        f"{cfg.WP_API_BASE}/posts/{post_id}",
-                        params={"_fields": "id,tags"},
-                        auth=AUTH,
-                        timeout=cfg.HTTP_TIMEOUT,
-                    )
-                    if resp.status_code == 200:
-                        current_tags = resp.json().get("tags", [])
-                        post_tags_cache[post_id] = current_tags
-                    else:
-                        current_tags = []
-                except Exception:
-                    current_tags = []
+            if post_id not in desired_state:
+                desired_state[post_id] = set()
+            desired_state[post_id].add(tag_id)
             
-            ok = apply_tag(post_id, tag_id, current_tags, dry_run=dry_run)
-            if ok:
-                applied += 1
-                # Atualizar cache
-                if post_id in post_tags_cache and tag_id not in post_tags_cache[post_id]:
-                    post_tags_cache[post_id].append(tag_id)
-            else:
-                errors += 1
-            
-            time.sleep(cfg.WP_PATCH_DELAY)
-        
-        results[tag_slug] = {"applied": applied, "errors": errors}
-        logger.info(
-            "Tag %s: %d aplicadas, %d erros",
-            tag_slug, applied, errors,
-        )
+    # 4. Calcular e aplicar posts que precisam de atualização
+    all_post_ids = set(current_state.keys()) | set(desired_state.keys())
     
+    for post_id in all_post_ids:
+        curr_tags = current_state.get(post_id)
+        if curr_tags is None:
+            try:
+                resp = requests.get(
+                    f"{cfg.WP_API_BASE}/posts/{post_id}",
+                    params={"_fields": "id,tags"},
+                    auth=AUTH,
+                    timeout=cfg.HTTP_TIMEOUT,
+                )
+                if resp.status_code == 200:
+                    curr_tags = set(resp.json().get("tags", []))
+                else:
+                    curr_tags = set()
+            except Exception:
+                curr_tags = set()
+                
+        des_position_tags = desired_state.get(post_id, set())
+        curr_position_tags = curr_tags & position_tag_ids
+        
+        if curr_position_tags == des_position_tags:
+            continue
+
+        new_tags = (curr_tags - position_tag_ids) | des_position_tags
+        
+        if dry_run:
+            logger.info("[DRY-RUN] Post %d: curadoria de %s para %s", 
+                        post_id, curr_position_tags, des_position_tags)
+            continue
+            
+        success = False
+        # Fallback e Retries incorporados
+        max_retries = getattr(cfg, "WP_RETRY_COUNT", 3)
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.post(
+                    f"{cfg.WP_API_BASE}/posts/{post_id}",
+                    json={"tags": list(new_tags)},
+                    auth=AUTH,
+                    timeout=cfg.HTTP_TIMEOUT,
+                )
+                if resp.status_code in (200, 201):
+                    logger.debug("Post %d atualizado de atomicamente", post_id)
+                    success = True
+                    break
+                else:
+                    logger.warning("Erro HTTP %d ao aplicar tags post %d (tnt %d)", 
+                                   resp.status_code, post_id, attempt)
+                    time.sleep(cfg.WP_PATCH_DELAY)
+            except Exception as e:
+                logger.warning("Falha aplicacao post %d (tnt %d): %s", post_id, attempt, e)
+                time.sleep(cfg.WP_PATCH_DELAY)
+        
+        for ts, tid in cfg.TAG_IDS.items():
+            if tid in des_position_tags and ts in results:
+                if success:
+                    results[ts]["applied"] += 1
+                else:
+                    results[ts]["errors"] += 1
+
+        time.sleep(cfg.WP_PATCH_DELAY)
+
     return results

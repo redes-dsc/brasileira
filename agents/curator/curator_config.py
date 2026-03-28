@@ -1,1 +1,0 @@
-../../curator/curator_config.py

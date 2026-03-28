@@ -26,7 +26,7 @@ sys.path.insert(0, '$CURATOR_DIR')
 from curator_agent import create_log_table
 create_log_table()
 print('✓ Tabela wp_7_curator_log criada/verificada')
-"
+" || true
 
 # 3. Criar diretório de logs
 echo ""

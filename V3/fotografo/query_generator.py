@@ -3,12 +3,46 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from shared.schemas import LLMRequest
 
+logger = logging.getLogger(__name__)
+
+
+async def generate_image_query(router, titulo: str, editoria: str) -> str:
+    """Gera query otimizada para busca de imagem via LLM PREMIUM.
+
+    Retorna uma string de busca. Em caso de falha, retorna o título original.
+    """
+    request = LLMRequest(
+        task_type="imagem_query",
+        messages=[
+            {"role": "system", "content": "Você gera queries precisas para buscar imagens jornalísticas. Retorne APENAS a query, sem explicação."},
+            {
+                "role": "user",
+                "content": (
+                    f"Gere uma query de busca de imagem em inglês para o artigo:\n"
+                    f"Título: {titulo}\nEditoria: {editoria}\n"
+                    f"Retorne apenas a query de busca, sem aspas nem explicação."
+                ),
+            },
+        ],
+        temperature=0.4,
+        max_tokens=100,
+    )
+    try:
+        response = await router.route_request(request)
+        query = response.content.strip().strip('"').strip("'")
+        if query:
+            return query
+    except Exception:
+        logger.debug("generate_image_query falhou, usando título", exc_info=True)
+    return titulo
+
 
 class QueryGenerator:
-    """Gera queries para os 4 tiers de busca/geração."""
+    """Gera queries para os 4 tiers de busca/geração (compatibilidade)."""
 
     def __init__(self, router):
         self.router = router

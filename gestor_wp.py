@@ -10,8 +10,10 @@ Lida com categorias em formato de lista (Macro + Subcategoria).
 """
 
 import requests
-
-from datetime import datetime
+import time
+import logging
+import os
+from datetime import datetime, timezone
 
 from config_geral import WP_URL, AUTH_HEADERS
 
@@ -22,51 +24,72 @@ from pathlib import Path
 sys.path.insert(0, "/home/bitnami")
 from curador_imagens_unificado import get_curador
 
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
+
+def _validate_wp_credentials():
+    """Validate that WordPress credentials are configured."""
+    wp_user = os.environ.get('WP_USER')
+    wp_app_pass = os.environ.get('WP_APP_PASS')
+    if not wp_user or not wp_app_pass:
+        logger.warning("WP_USER or WP_APP_PASS environment variables not set. API calls may fail.")
+        return False
+    return True
+
+
+def _handle_http_error(response, context="API call"):
+    """Handle HTTP error responses with proper logging."""
+    if response.status_code == 401:
+        logger.error(f"{context} failed: 401 Unauthorized - Check WP_USER and WP_APP_PASS credentials")
+        return None
+    elif response.status_code == 403:
+        logger.error(f"{context} failed: 403 Forbidden - User lacks permission for this action")
+        return None
+    return response
+
+
+
+_AUTOR_CACHE = {}
 
 def resolver_autor_estrito(veiculo, url_original):
-
     veiculo_lower = veiculo.lower()
-
     url_lower = url_original.lower() if url_original else ""
-
     
-
     marcadores_gov = [
-
         'gov.br', 'jus.br', 'leg.br', 'def.br', 'mp.br', 
-
         'agencia brasil', 'radioagencia', 'senado', 'camara'
-
     ]
-
     
-
     is_oficial = any(m in url_lower or m in veiculo_lower for m in marcadores_gov)
-
     if not is_oficial:
-
         return ID_REDACAO
-
         
-
     try:
-
         termo = "agenciabrasil" if "brasil" in veiculo_lower else veiculo.split()[0]
-
         if "Min." in veiculo: termo = veiculo.split()[-1]
-
         
+        if termo in _AUTOR_CACHE:
+            return _AUTOR_CACHE[termo]
+        
+        res_busca = requests.get(f"{WP_URL}/users?search={termo}", headers=AUTH_HEADERS)
 
-        res_busca = requests.get(f"{WP_URL}/users?search={termo}&context=edit", headers=AUTH_HEADERS)
+        if res_busca.status_code in [401, 403]:
+            _handle_http_error(res_busca, f"User search for '{termo}'")
+            return ID_REDACAO
+        
+        if res_busca.status_code == 200:
+            try:
+                users = res_busca.json()
+                if len(users) > 0:
+                    user_id = users[0]['id']
+                    _AUTOR_CACHE[termo] = user_id
+                    return user_id
+            except (ValueError, KeyError) as e:
+                logger.error(f"Error parsing user search response for '{termo}': {e}")
 
-        if res_busca.status_code == 200 and len(res_busca.json()) > 0:
-
-            return res_busca.json()[0]['id']
-
-    except:
-
-        pass
+    except requests.RequestException as e:
+        logger.error(f"HTTP request failed during author resolution for '{termo}': {e}")
 
         
 
@@ -117,17 +140,34 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
             tag_ids.append(_tag_cache_local[tag])
             continue
         
-        res_t = requests.post(f"{WP_URL}/tags", headers=AUTH_HEADERS, json={'name': tag})
-        if res_t.status_code == 201:
-            tid = res_t.json().get('id')
-            tag_ids.append(tid)
-            _tag_cache_local[tag] = tid
-        elif res_t.status_code == 400:
-            busca = requests.get(f"{WP_URL}/tags?search={tag}", headers=AUTH_HEADERS)
-            if busca.status_code == 200 and len(busca.json()) > 0:
-                tid = busca.json()[0].get('id')
-                tag_ids.append(tid)
-                _tag_cache_local[tag] = tid
+        try:
+            res_t = requests.post(f"{WP_URL}/tags", headers=AUTH_HEADERS, json={'name': tag})
+            if res_t.status_code == 201:
+                try:
+                    tid = res_t.json().get('id')
+                    tag_ids.append(tid)
+                    _tag_cache_local[tag] = tid
+                except (ValueError, KeyError) as e:
+                    logger.error(f"Error parsing tag creation response for '{tag}': {e}")
+            elif res_t.status_code in [401, 403]:
+                _handle_http_error(res_t, f"Tag creation for '{tag}'")
+            elif res_t.status_code == 400:
+                try:
+                    busca = requests.get(f"{WP_URL}/tags?search={tag}", headers=AUTH_HEADERS)
+                    if busca.status_code in [401, 403]:
+                        _handle_http_error(busca, f"Tag search for '{tag}'")
+                    elif busca.status_code == 200:
+                        tags_found = busca.json()
+                        if len(tags_found) > 0:
+                            tid = tags_found[0].get('id')
+                            tag_ids.append(tid)
+                            _tag_cache_local[tag] = tid
+                except (ValueError, KeyError) as e:
+                    logger.error(f"Error parsing tag search response for '{tag}': {e}")
+                except requests.RequestException as e:
+                    logger.error(f"HTTP request failed during tag search for '{tag}': {e}")
+        except requests.RequestException as e:
+            logger.error(f"HTTP request failed during tag creation for '{tag}': {e}")
 
 
 
@@ -148,14 +188,13 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
     # LOGICA DE MULTIPLAS CATEGORIAS
 
     if isinstance(cat_id, list):
-
-        cat_ids = [int(c) for c in cat_id]
-
+        cat_ids = [int(c) for c in cat_id if str(c).isdigit()]
     else:
-
-        try: cat_ids = [int(cat_id)]
-
-        except: cat_ids = [1] 
+        try:
+            cat_ids = [int(cat_id)]
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid category ID '{cat_id}', defaulting to empty list: {e}")
+            cat_ids = []
 
 
 
@@ -169,7 +208,7 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
 
         'status': 'publish', 
 
-        'date_gmt': datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        'date_gmt': datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
 
         'categories': cat_ids, 
 
@@ -183,15 +222,42 @@ def publicar_no_wordpress(dados, autor_id, cat_id, veiculo):
 
         
 
-    res = requests.post(f"{WP_URL}/posts", json=payload, headers=AUTH_HEADERS)
-
-    if res.status_code == 201:
-        post_id = res.json().get('id')
-        print(f"[OK] Reportagem publicada com sucesso! ID: {post_id}\n")
-        return post_id
-    else:
-        print(f"[ERRO WP] {res.text}\n")
-        return None
+    _validate_wp_credentials()
+    
+    for attempt in range(3):
+        try:
+            res = requests.post(f"{WP_URL}/posts", json=payload, headers=AUTH_HEADERS)
+            if res.status_code == 201:
+                try:
+                    post_id = res.json().get('id')
+                    print(f"[OK] Reportagem publicada com sucesso! ID: {post_id}\\n")
+                    return post_id
+                except (ValueError, KeyError) as e:
+                    logger.error(f"Error parsing post creation response: {e}")
+                    return None
+            elif res.status_code == 401:
+                logger.error("Post creation failed: 401 Unauthorized - Check WP_USER and WP_APP_PASS credentials")
+                print("[ERRO WP] 401 Unauthorized - Credenciais invalidas\\n")
+                return None
+            elif res.status_code == 403:
+                logger.error("Post creation failed: 403 Forbidden - User lacks permission to create posts")
+                print("[ERRO WP] 403 Forbidden - Sem permissao\\n")
+                return None
+            elif res.status_code in [429, 502, 503]:
+                print(f"[RETRY] Servidor WP indisponivel ({res.status_code}), aguardando 5s...")
+                time.sleep(5)
+                continue
+            else:
+                logger.error(f"Post creation failed with status {res.status_code}: {res.text}")
+                print(f"[ERRO WP] {res.text}\\n")
+                return None
+        except requests.RequestException as e:
+            logger.error(f"HTTP request failed during post creation (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
+                time.sleep(5)
+                continue
+            return None
+    return None
 
 
 

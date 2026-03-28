@@ -161,6 +161,8 @@ VALID_CATEGORIES = [
 
     "Energia & Clima",
 
+    "Turismo",
+
 ]
 
 

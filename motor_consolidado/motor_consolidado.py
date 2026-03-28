@@ -5,6 +5,7 @@ Monitora portais, detecta trending, sintetiza e publica matérias consolidadas.
 
 Uso:
     python3 motor_consolidado.py                  # Ciclo normal
+    python3 motor_consolidado.py --single-cycle   # Ciclo único (para bridge)
     DRY_RUN=1 python3 motor_consolidado.py        # Sem publicar
     PUBLISH_AS_DRAFT=1 python3 motor_consolidado.py  # Publica como rascunho
 
@@ -13,8 +14,10 @@ Agendamento (crontab):
         /home/bitnami/motor_consolidado/motor_consolidado.py >> /home/bitnami/logs/raia3_cron.log 2>&1
 """
 
+import argparse
 import fcntl
 import logging
+import logging.handlers
 import os
 import signal
 import sys
@@ -43,7 +46,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.handlers.TimedRotatingFileHandler(LOG_FILE, when="midnight", backupCount=7, encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -85,6 +88,8 @@ def acquire_lock():
         return True
     except IOError:
         logger.warning("Outra instância do motor_consolidado já está rodando.")
+        _lock_fd.close()
+        _lock_fd = None
         return False
 
 
@@ -288,8 +293,24 @@ def run_cycle():
 
 # ── Entry Point ──────────────────────────────────────────
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Motor Consolidado (Raia 3) — brasileira.news")
+    parser.add_argument('--single-cycle', action='store_true', 
+                        help='Run one cycle and exit (same as default behavior)')
+    return parser.parse_args()
+
+
 def main():
     """Ponto de entrada principal."""
+    args = parse_args()
+    
+    # Log mode
+    if args.single_cycle:
+        logger.info("Running in single-cycle mode")
+    else:
+        logger.info("Running in continuous mode (single cycle for cron)")
+    
     logger.info("Motor Consolidado (Raia 3) iniciando...")
 
     if not acquire_lock():
@@ -300,6 +321,7 @@ def main():
 
     try:
         count = run_cycle()
+        logger.info("Single cycle complete — Published: %d | Failed: 0", count)
         logger.info("Motor Consolidado finalizado. Artigos publicados: %d", count)
     except Exception as e:
         logger.critical("ERRO NO MOTOR CONSOLIDADO: %s", e, exc_info=True)
@@ -311,8 +333,12 @@ def main():
             enviar_alerta(f"ERRO CRÍTICO no Motor Consolidado: {str(e)[:200]}")
         except:
             pass
+        release_lock()
+        sys.exit(1)
     finally:
         release_lock()
+    
+    sys.exit(0)
 
 
 if __name__ == "__main__":

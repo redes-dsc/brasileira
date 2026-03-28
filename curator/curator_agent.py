@@ -17,6 +17,7 @@ Uso:
 """
 
 import logging
+import logging.handlers
 import os
 import sys
 import time
@@ -47,7 +48,7 @@ def setup_logging():
         datefmt="%H:%M:%S",
     )
     
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = logging.handlers.TimedRotatingFileHandler(log_file, when="midnight", backupCount=7, encoding="utf-8")
     file_handler.setFormatter(formatter)
     
     console_handler = logging.StreamHandler()
@@ -203,6 +204,10 @@ def select_positions(scored_posts: list[dict]) -> dict[str, list[int]]:
     # Ordenar por data decrescente para pass 2 (fallback)
     by_date = sorted(scored_posts, key=lambda p: p.get("post_date", ""), reverse=True)
     
+    from urllib.parse import urlparse
+    category_destaque_counts = {}
+    source_top5_counts = {}
+    
     # ── PASS 1: Seleção por score ────────────────────
     for tag_slug, pos_cfg in cfg.HOMEPAGE_POSITIONS.items():
         limit = pos_cfg["limit"]
@@ -228,13 +233,51 @@ def select_positions(scored_posts: list[dict]) -> dict[str, list[int]]:
                 continue
             
             # Filtro de categoria (para editorias)
+            post_cats = set(post.get("categories", []))
             if cat_filter is not None:
-                post_cats = set(post.get("categories", []))
                 if not post_cats & cat_filter:
                     continue
-            
+                    
+            # Regras de Diversidade (Manchete + Submanchete = Top 5 slots)
+            is_destaque = tag_slug in ("home-manchete", "home-submanchete")
+            src_domain = ""
+            if is_destaque:
+                violation = False
+                for cat in post_cats:
+                    if category_destaque_counts.get(cat, 0) >= getattr(cfg, "MAX_SAME_CATEGORY_DESTAQUE", 2):
+                        violation = True
+                        break
+                
+                src = post.get("source_url", "")
+                src_domain = urlparse(src).netloc.lower() if src else ""
+                if src_domain and source_top5_counts.get(src_domain, 0) >= getattr(cfg, "MAX_SAME_SOURCE_TOP5", 1):
+                    violation = True
+                    
+                if violation:
+                    continue
+
+            # Regra Dura: Manchete não pode ter mais de 4h
+            if tag_slug == "home-manchete":
+                from datetime import datetime, timedelta
+                try:
+                    from zoneinfo import ZoneInfo
+                    local_now = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+                except Exception:
+                    local_now = datetime.now() - timedelta(hours=3)
+                    
+                post_date = post.get("post_date")
+                if isinstance(post_date, datetime):
+                    if (local_now - post_date) > timedelta(hours=4):
+                        continue
+
             selected.append(post_id)
             used_ids.add(post_id)
+            
+            if is_destaque:
+                for cat in post_cats:
+                    category_destaque_counts[cat] = category_destaque_counts.get(cat, 0) + 1
+                if src_domain:
+                    source_top5_counts[src_domain] = source_top5_counts.get(src_domain, 0) + 1
         
         selections[tag_slug] = selected
     
@@ -262,16 +305,43 @@ def select_positions(scored_posts: list[dict]) -> dict[str, list[int]]:
             
             if post_id in used_ids:
                 continue
+                
+            # Recusar post no fallback se fortemente penalizado (score < 0)
+            if post.get("score", 0) < 0:
+                continue
             
             # Para posições com cat_filter, exigir categoria correta
+            post_cats = set(post.get("categories", []))
             if cat_filter is not None:
-                post_cats = set(post.get("categories", []))
                 if not post_cats & cat_filter:
+                    continue
+            
+            is_destaque = tag_slug in ("home-manchete", "home-submanchete")
+            src_domain = ""
+            if is_destaque:
+                violation = False
+                for cat in post_cats:
+                    if category_destaque_counts.get(cat, 0) >= getattr(cfg, "MAX_SAME_CATEGORY_DESTAQUE", 2):
+                        violation = True
+                        break
+                        
+                src = post.get("source_url", "")
+                src_domain = urlparse(src).netloc.lower() if src else ""
+                if src_domain and source_top5_counts.get(src_domain, 0) >= getattr(cfg, "MAX_SAME_SOURCE_TOP5", 1):
+                    violation = True
+                    
+                if violation:
                     continue
             
             current.append(post_id)
             used_ids.add(post_id)
             needed -= 1
+            
+            if is_destaque:
+                for cat in post_cats:
+                    category_destaque_counts[cat] = category_destaque_counts.get(cat, 0) + 1
+                if src_domain:
+                    source_top5_counts[src_domain] = source_top5_counts.get(src_domain, 0) + 1
         
         selections[tag_slug] = current
     
@@ -317,6 +387,7 @@ def create_log_table():
 
 def log_cycle(selections: dict[str, list[int]], scored_map: dict[int, dict]):
     """Registra o ciclo de curadoria no banco."""
+    logger = logging.getLogger("curator")
     conn = get_db_connection()
     prefix = cfg.TABLE_PREFIX
     try:
@@ -444,32 +515,33 @@ def run_cycle(dry_run: bool = False):
             sys.path.insert(0, "/home/bitnami")
             from curador_imagens_unificado import get_curador
             
-            from curator_agent import get_db_connection
             conn = get_db_connection()
-            with conn.cursor() as cur:
-                # Obter posts sem imagem
-                for tag_slug, post_ids in selections.items():
-                    for post_id in post_ids:
-                        info = next((p for p in scored_posts if p["post_id"] == post_id), None)
-                        if info and not info.get("featured_media"):
-                            logger.info(f"Post {post_id} sem imagem. Acionando curador unificado...")
-                            
-                            curador = get_curador()
-                            media_id, _ = curador.get_featured_image(
-                                html_content=info.get("post_content", ""),
-                                source_url=info.get("source_url", ""),
-                                title=info.get("post_title", ""),
-                                keywords=" ".join(info.get("tags", [])[:3])
-                            )
-                            if media_id:
-                                # Update no banco (postmeta)
-                                cur.execute(
-                                    f"INSERT INTO {cfg.TABLE_PREFIX}postmeta (post_id, meta_key, meta_value) VALUES (%s, '_thumbnail_id', %s)",
-                                    (post_id, media_id)
+            try:
+                with conn.cursor() as cur:
+                    # Obter posts sem imagem
+                    for tag_slug, post_ids in selections.items():
+                        for post_id in post_ids:
+                            info = next((p for p in scored_posts if p["post_id"] == post_id), None)
+                            if info and not info.get("featured_media"):
+                                logger.info(f"Post {post_id} sem imagem. Acionando curador unificado...")
+                                
+                                curador = get_curador()
+                                media_id, _ = curador.get_featured_image(
+                                    html_content=info.get("post_content", ""),
+                                    source_url=info.get("source_url", ""),
+                                    title=info.get("post_title", ""),
+                                    keywords=" ".join(info.get("tags", [])[:3])
                                 )
-                                logger.info(f"Fase 6: Imagem {media_id} atribuída ao post {post_id}.")
-            conn.commit()
-            conn.close()
+                                if media_id:
+                                    # Update no banco (postmeta)
+                                    cur.execute(
+                                        f"INSERT INTO {cfg.TABLE_PREFIX}postmeta (post_id, meta_key, meta_value) VALUES (%s, '_thumbnail_id', %s)",
+                                        (post_id, media_id)
+                                    )
+                                    logger.info(f"Fase 6: Imagem {media_id} atribuída ao post {post_id}.")
+                conn.commit()
+            finally:
+                conn.close()
         except Exception as e:
             logger.error(f"Erro na Fase 6 (Verificação de Imagens): {e}")
             

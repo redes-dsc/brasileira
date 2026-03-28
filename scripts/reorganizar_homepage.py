@@ -61,7 +61,7 @@ CATEGORY_IDS_BY_POSITION = {
 }
 
 # Track positions of all post-displaying blocks
-block_pattern = r'\[(td_flex_block_\d+|td_block_big_grid_flex_\d+)([^\]]*?)\]'
+block_pattern = r'\[(td_flex_block_\d+|td_block_big_grid_flex_\d+)([\s\S]*?)\]'
 block_positions = []
 
 for m in re.finditer(block_pattern, content):
@@ -154,8 +154,8 @@ def replace_b64_desc(match):
                 new_encoded = base64.b64encode(urllib.parse.quote(real_label).encode()).decode()
                 print(f"  Label B64: \"{decoded_text}\" -> \"{real_label}\"")
                 return prefix + new_encoded + suffix
-    except:
-        pass
+    except Exception as e:
+        print(f"  Aviso: Falha b64decode ({e})")
     
     return match.group(0)
 

@@ -9,6 +9,8 @@ from .schemas import (
     CallRecord,
     SourceAssignment,
     RawArticle,
+    ClassifiedArticle,
+    PublishedArticle,
 )
 
 __all__ = [
@@ -22,4 +24,6 @@ __all__ = [
     "CallRecord",
     "SourceAssignment",
     "RawArticle",
+    "ClassifiedArticle",
+    "PublishedArticle",
 ]

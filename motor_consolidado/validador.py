@@ -66,23 +66,16 @@ def validate_no_plagiarism(content: str, sources: list[dict], max_ratio: float =
         if not src_text:
             continue
         clean_src = re.sub(r"\s+", " ", src_text.lower()).strip()
+        tokens_content = set(clean_content.split())
+        tokens_src = set(clean_src.split())
+        if not tokens_content: continue
         
-        # SequenceMatcher em textos grandes: usar amostragem
-        if len(clean_content) > 3000:
-            # Comparar blocos de 1000 chars
-            max_r = 0.0
-            for start in range(0, min(len(clean_content), 5000), 1000):
-                chunk = clean_content[start:start+1000]
-                r = SequenceMatcher(None, chunk, clean_src[:3000]).ratio()
-                max_r = max(max_r, r)
-            ratio = max_r
-        else:
-            ratio = SequenceMatcher(None, clean_content, clean_src[:5000]).ratio()
+        overlap_ratio = len(tokens_content.intersection(tokens_src)) / len(tokens_content)
 
-        if ratio > max_ratio:
+        if overlap_ratio > max_ratio:
             logger.warning(
-                "Possível plágio: %.1f%% de sobreposição com %s (máx: %.0f%%)",
-                ratio * 100, src.get("portal_name", "?"), max_ratio * 100,
+                "Possível plágio (Token overlap): %.1f%% de sobreposição com %s (máx: %.0f%%)",
+                overlap_ratio * 100, src.get("portal_name", "?"), max_ratio * 100,
             )
             return False
 

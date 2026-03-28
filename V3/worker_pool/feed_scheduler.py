@@ -11,7 +11,6 @@ from shared.kafka_client import KafkaClient
 logger = logging.getLogger(__name__)
 
 TOPIC_ASSIGNMENTS = "fonte-assignments"
-CYCLE_TIMEOUT_SECONDS = 900
 DEFAULT_CYCLE_INTERVAL = 1800
 
 
@@ -30,8 +29,6 @@ class FeedScheduler:
         self.health_tracker = health_tracker
         self.cycle_interval = cycle_interval
         self._running = True
-        self._cycle_processed: set[int] = set()
-        self._cycle_source_ids: set[int] = set()
 
     async def start(self) -> None:
         await self.kafka.start_producer()
@@ -78,14 +75,12 @@ class FeedScheduler:
         return elapsed_minutes >= interval
 
     async def schedule_cycle(self) -> None:
-        """Executa um ciclo de agendamento."""
+        """Executa um ciclo de agendamento: query DB, produce to Kafka, done."""
 
         sources = await self.load_all_sources()
         to_process = [source for source in sources if self._should_process_source(source)]
 
-        self._cycle_processed = set()
-        self._cycle_source_ids = {int(source["id"]) for source in to_process}
-
+        sent = 0
         for source in to_process:
             if not self._running:
                 break
@@ -102,49 +97,16 @@ class FeedScheduler:
                 "retry": False,
             }
             await self.kafka.send(TOPIC_ASSIGNMENTS, assignment, key=str(source["id"]))
+            sent += 1
 
-        await asyncio.sleep(CYCLE_TIMEOUT_SECONDS)
-        await self._reschedule_missed()
-
-    async def _reschedule_missed(self) -> None:
-        missed_ids = list(self._cycle_source_ids - self._cycle_processed)
-        if not missed_ids:
-            return
-
-        async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, nome, url, tipo, tier, config_scraper, polling_interval_min
-                FROM fontes WHERE id = ANY($1)
-                """,
-                missed_ids,
-            )
-
-        for row in rows:
-            source = dict(row)
-            assignment = {
-                "fonte_id": source["id"],
-                "nome": source["nome"],
-                "url": source["url"],
-                "tipo": source["tipo"],
-                "tier": source["tier"],
-                "config_scraper": source.get("config_scraper"),
-                "polling_interval_min": source.get("polling_interval_min", 30),
-                "priority": "high",
-                "scheduled_at": datetime.now(timezone.utc).isoformat(),
-                "retry": True,
-            }
-            await self.kafka.send(TOPIC_ASSIGNMENTS, assignment, key=str(source["id"]))
-
-    def mark_processed(self, fonte_id: int) -> None:
-        self._cycle_processed.add(fonte_id)
+        logger.info("Ciclo agendado: %d/%d fontes enviadas para workers", sent, len(sources))
 
     async def run_forever(self) -> None:
         await self.start()
         while self._running:
             try:
                 await self.schedule_cycle()
-                await asyncio.sleep(max(self.cycle_interval - CYCLE_TIMEOUT_SECONDS, 1))
+                await asyncio.sleep(self.cycle_interval)
             except Exception:
                 logger.exception("Erro no scheduler")
                 await asyncio.sleep(60)

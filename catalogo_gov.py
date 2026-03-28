@@ -180,30 +180,20 @@ CATALOGO_GOV = {
 
 
 # Gerador dinâmico TRTs
-
-for i in range(1, 25):
-
+_trts = []
+for i in range(1, 24): # O TRT24 nao existe mais, ate 23
     url_trt = f"https://www.trt{i}.jus.br/noticias"
-
     if i == 2: url_trt = "https://ww2.trt2.jus.br/noticias/noticias"
-
     if i == 3: url_trt = "https://portal.trt3.jus.br/internet/conheca-o-trt/comunicacao/noticias-juridicas"
-
     if i == 7: url_trt = "https://www.trt7.jus.br/index.php/noticias/todas-as-noticias"
-
     if i == 9: url_trt = "https://www.trt9.jus.br/portal/noticias.xhtml"
-
     if i == 14: url_trt = "https://portal.trt14.jus.br/portal/"
-
     if i == 22: url_trt = "https://www.trt22.jus.br/portal/noticias"
-
     if i == 23: url_trt = "https://portal.trt23.jus.br/portal/noticias"
-
     
-
-    CATALOGO_GOV["judiciario_conselhos"].append({
-
+    _trts.append({
         "nome": f"TRT{i}", "url": url_trt, "cat_id": CAT_JUSTICA, "tipo_molde": "inteligente"
-
     })
 
+# Injetar evitando re-append em recarregamentos dinâmicos
+CATALOGO_GOV["judiciario_conselhos"] = [t for t in CATALOGO_GOV["judiciario_conselhos"] if not t["nome"].startswith("TRT")] + _trts

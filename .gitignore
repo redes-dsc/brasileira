@@ -1,58 +1,91 @@
-# Bitnami/System
-bitnami_application_password
-bitnami_credentials
-.bash_history
-.selected_editor
-.sudo_as_admin_successful
-.gitlab/
-stack
-htdocs
-bitnami_application_password
-bitnami_credentials
+# ══════════════════════════════════════════════════════
+# brasileira.news — .gitignore
+# ══════════════════════════════════════════════════════
 
-# Environment/Secrets
+# ── Credentials & Secrets ──────────────────────────────
 .env
+*.env
+!.env.example
+!V3/.env.example
 config_chaves.py
 bitnami_application_password
 bitnami_credentials
+.ssh/
 
-# Virtual Environment
-venv/
+# ── Bitnami/System ─────────────────────────────────────
+stack
+htdocs
+.bash_history
+.selected_editor
+.sudo_as_admin_successful
+.profile
+.bashrc
+.bash_logout
+.wget-hsts
 
-# Python Cache
-__pycache__/
-*.pyc
-
-# Logs
-*.log
-log_do_motor.txt*
-log_mestre.txt
-log_scrapers.txt*
-logs/
-historico_links.txt
-
-# Backups and Temporary files
-backups_adsense/
-backup_integral_robos.txt
-homepage_tdc_*.txt
-dados_*.py
-*.db
-*.json
-!controle_auditoria.json
-
-# Agents/Internal
+# ── IDE & Tool configs ─────────────────────────────────
+.gitlab/
 .agent/
 .antigravity-server/
 .gemini/
 .claude/
+.claude.json
 .config/
 .local/
 .qoder/
 .qoder-server/
 .cache/
-.claude/
-.gemini/
-.qoder/
-.qoder-server/
-.antigravity-server/
+.copilot/
+.dotnet/
+.vscode-server/
 *.lock
+
+# ── Python ─────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── Logs ───────────────────────────────────────────────
+*.log
+log_do_motor.txt*
+log_mestre.txt*
+log_scrapers.txt*
+logs/
+
+# ── Data & Large files ─────────────────────────────────
+historico_links.txt
+backup_integral_robos.txt
+homepage_tdc_*.txt
+dados_*.py
+*.db
+catalogo_imagens.json
+llm_budget.json
+motor_rss/feeds.json
+motor_rss/feeds_backup_*.json
+motor_rss/*.env
+motor_scrapers/*.env
+motor_consolidado/.cycle_counter
+
+# ── Backups ────────────────────────────────────────────
+backups_adsense/
+
+# ── Docker ─────────────────────────────────────────────
+V3/.env
+versao3/.env
+
+# ── versao2 venvs (huge) ──────────────────────────────
+versao2/venv/
+versao2/.venv/
+
+# ── OS files ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── PID files ──────────────────────────────────────────
+*.pid

@@ -1,146 +1,105 @@
-"""Pipeline de classificação: ML + NER + relevância + produção Kafka."""
+"""Pipeline de classificação: ML -> (LLM fallback) -> NER -> scoring."""
 
 from __future__ import annotations
 
-import hashlib
-from dataclasses import dataclass
-from datetime import datetime, timezone
+import logging
+from typing import Any, Optional
 
-from .classifier import MLClassifier
-from .ner_extractor import NERExtractor, filter_entities
-from .relevance_scorer import RelevanceScorer
+from shared.schemas import LLMRequest
 
-CATEGORY_TO_WP_ID = {
-    "politica": 2,
-    "economia": 3,
-    "esportes": 4,
-    "tecnologia": 5,
-    "saude": 6,
-    "educacao": 7,
-    "ciencia": 8,
-    "cultura_entretenimento": 9,
-    "mundo_internacional": 10,
-    "meio_ambiente": 11,
-    "seguranca_justica": 12,
-    "sociedade": 13,
-    "brasil": 14,
-    "regionais": 15,
-    "opiniao_analise": 16,
-    "ultimas_noticias": 17,
+logger = logging.getLogger(__name__)
+
+CATEGORY_TO_WP_ID: dict[str, int] = {
+    "politica": 3, "economia": 4, "esportes": 5, "tecnologia": 6,
+    "saude": 7, "educacao": 8, "ciencia": 9, "cultura": 10,
+    "mundo": 11, "meio_ambiente": 12, "seguranca": 13, "sociedade": 15,
+    "brasil": 14, "regionais": 16, "opiniao": 18, "ultimas_noticias": 1,
 }
 
-
-@dataclass(slots=True)
-class RawArticle:
-    article_id: str
-    url: str
-    url_hash: str
-    fonte_id: int
-    fonte_nome: str
-    fonte_tipo: str
-    fonte_peso: int
-    fonte_url: str
-    fonte_categoria_hint: str
-    titulo: str
-    conteudo_bruto: str
-    conteudo_html: str
-    resumo: str
-    imagem_url: str | None
-    tipo: str
-    data_publicacao: datetime
-    data_coleta: datetime
-
-
-@dataclass(slots=True)
-class ClassifiedArticle:
-    article_id: str
-    categoria: str
-    categoria_wp_id: int
-    categoria_confidence: float
-    score_relevancia: float
-    urgencia: str
-    tags_sugeridas: list[str]
-    entidades_pessoas: list[str]
-    entidades_orgs: list[str]
-    entidades_locais: list[str]
-    classificador_version: str
+LLM_FALLBACK_THRESHOLD = 0.6
 
 
 class ClassificationPipeline:
-    """Orquestra classificação e produz mensagem classificada."""
+    """Orquestra classifier + NER + scorer com LLM fallback."""
 
-    def __init__(
-        self,
-        ml_classifier: MLClassifier,
-        ner_extractor: NERExtractor,
-        relevance_scorer: RelevanceScorer,
-        producer=None,
-        llm_fallback=None,
-    ):
-        self.ml_classifier = ml_classifier
-        self.ner_extractor = ner_extractor
-        self.relevance_scorer = relevance_scorer
-        self.producer = producer
-        self.llm_fallback = llm_fallback
+    def __init__(self, classifier, ner_extractor, scorer, router=None):
+        self.classifier = classifier
+        self.ner = ner_extractor
+        self.scorer = scorer
+        self.router = router
 
-    async def classify(self, raw: RawArticle) -> ClassifiedArticle:
-        classification = await self.ml_classifier.classify(
-            titulo=raw.titulo,
-            conteudo=raw.conteudo_bruto or raw.resumo,
-            fonte_categoria_hint=raw.fonte_categoria_hint,
-        )
+    async def classify(self, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """Pipeline completo de classificação."""
+        try:
+            titulo = payload.get("titulo", "")
+            resumo = payload.get("resumo", "")
+            text = f"{titulo}. {resumo}"
 
-        entities = await self.ner_extractor.extract(raw.titulo, raw.conteudo_bruto or raw.resumo)
-        entities = filter_entities(entities)
+            # ML classification
+            editoria, confidence = await self.classifier.classify(text)
 
-        relevance = self.relevance_scorer.score(
-            titulo=raw.titulo,
-            conteudo=raw.conteudo_bruto or raw.resumo,
-            fonte_tier=raw.fonte_tipo,
-            fonte_peso=raw.fonte_peso,
-            categoria=classification.categoria,
-            data_publicacao=raw.data_publicacao,
-        )
+            # LLM fallback se confiança baixa
+            if confidence < LLM_FALLBACK_THRESHOLD and self.router is not None:
+                llm_editoria = await self._llm_classify(titulo, resumo)
+                if llm_editoria:
+                    editoria = llm_editoria
+                    confidence = max(confidence, 0.7)
 
-        category = classification.categoria
-        confidence = classification.confianca
-        if confidence < 0.55 and self.llm_fallback is not None:
-            fallback = await self.llm_fallback(raw)
-            if fallback in CATEGORY_TO_WP_ID:
-                category = fallback
+            # NER
+            entities = await self.ner.extract(text)
+            from .ner_extractor import filter_entities
+            entities = filter_entities(entities)
 
-        classified = ClassifiedArticle(
-            article_id=raw.article_id,
-            categoria=category,
-            categoria_wp_id=CATEGORY_TO_WP_ID.get(category, 17),
-            categoria_confidence=confidence,
-            score_relevancia=relevance.score,
-            urgencia=relevance.urgencia.value,
-            tags_sugeridas=entities.tags_wordpress,
-            entidades_pessoas=entities.pessoas,
-            entidades_orgs=entities.organizacoes,
-            entidades_locais=entities.locais,
-            classificador_version="3.0.0",
-        )
-
-        if self.producer is not None:
-            await self.producer.send(
-                "classified-articles",
-                {
-                    "article_id": classified.article_id,
-                    "categoria": classified.categoria,
-                    "categoria_wp_id": classified.categoria_wp_id,
-                    "categoria_confidence": classified.categoria_confidence,
-                    "score_relevancia": classified.score_relevancia,
-                    "urgencia": classified.urgencia,
-                    "tags_sugeridas": classified.tags_sugeridas,
-                    "entidades_pessoas": classified.entidades_pessoas,
-                    "entidades_orgs": classified.entidades_orgs,
-                    "entidades_locais": classified.entidades_locais,
-                    "classificador_version": classified.classificador_version,
-                    "processed_at": datetime.now(timezone.utc).isoformat(),
-                },
-                key=raw.article_id,
+            # Scoring
+            score_result = self.scorer.score(
+                titulo=titulo,
+                resumo=resumo,
+                fonte_tier=payload.get("fonte_tier", payload.get("tier", "padrao")),
+                data_pub=payload.get("data_publicacao"),
+                entities=entities,
             )
 
-        return classified
+            wp_id = CATEGORY_TO_WP_ID.get(editoria, 1)
+
+            return {
+                **payload,
+                "editoria": editoria,
+                "categoria_wp_id": wp_id,
+                "relevancia_score": score_result["score"],
+                "urgencia": score_result["urgencia"],
+                "entidades": entities,
+                "confianca_classificacao": confidence,
+            }
+        except Exception:
+            logger.error("Falha na pipeline de classificação", exc_info=True)
+            raise
+
+    async def _llm_classify(self, titulo: str, resumo: str) -> Optional[str]:
+        """Fallback LLM para classificação de baixa confiança."""
+        try:
+            categories = list(CATEGORY_TO_WP_ID.keys())
+            request = LLMRequest(
+                task_type="classificacao_categoria",
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Classifique esta notícia em UMA das categorias: {', '.join(categories)}.\n\n"
+                        f"Título: {titulo}\nResumo: {resumo[:300]}\n\n"
+                        f"Responda APENAS com o nome da categoria, sem explicação."
+                    ),
+                }],
+                max_tokens=50,
+                temperature=0.1,
+            )
+            response = await self.router.route_request(request)
+            category = response.content.strip().lower().replace(" ", "_")
+            if category in CATEGORY_TO_WP_ID:
+                return category
+            # Tenta matching parcial
+            for cat in categories:
+                if cat in category or category in cat:
+                    return cat
+            return None
+        except Exception:
+            logger.warning("LLM fallback de classificação falhou", exc_info=True)
+            return None

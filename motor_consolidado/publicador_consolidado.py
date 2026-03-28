@@ -11,7 +11,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path("/home/bitnami/motor_rss")))
 sys.path.insert(0, str(Path("/home/bitnami")))
 
+from curador_imagens_unificado import get_curador, upload_to_wordpress, is_official_source
 import config
+from urllib.parse import urlparse
+import llm_router
 import db
 import wp_publisher
 import image_handler
@@ -59,10 +62,7 @@ def _get_image_for_consolidated(article: dict, sources: list[dict]) -> int | Non
     keywords = " ".join(article.get("tags", [])[:3]) if article.get("tags") else title
 
     # Preparar importação do nosso novo curador unificado
-    import sys
-    from pathlib import Path
     try:
-        sys.path.insert(0, str(Path("/home/bitnami")))
         from curador_imagens_unificado import get_curador, upload_to_wordpress, is_official_source
     except Exception as e:
         logger.error(f"Não foi possível importar curador_imagens_unificado: {e}")
@@ -75,7 +75,6 @@ def _get_image_for_consolidated(article: dict, sources: list[dict]) -> int | Non
         if img_url and is_official_source(src_url):
             logger.info("Usando imagem explícita de fonte OFICIAL (%s): %s", src.get("portal_name", "Fonte"), img_url[:60])
             safe_name = re.sub(r"[^a-z0-9]+", "-", title.lower().strip())[:50]
-            from urllib.parse import urlparse
             domain = urlparse(src_url).netloc
             caption = f"Reprodução Livre / {domain}"
             media_id = upload_to_wordpress(img_url, f"consolidada-{safe_name}", alt_text=title, caption=caption)
@@ -89,7 +88,6 @@ def _get_image_for_consolidated(article: dict, sources: list[dict]) -> int | Non
     # Se html_content está vazio mas a fonte é oficial, buscar o HTML para Tier 1 extrair og:image
     if not first_html and first_source_url and is_official_source(first_source_url):
         try:
-            import requests as _req
             _resp = _req.get(first_source_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
             if _resp.status_code == 200:
                 first_html = _resp.text
@@ -115,8 +113,6 @@ def _get_image_for_consolidated(article: dict, sources: list[dict]) -> int | Non
         else:
             # Fallback: campos ausentes, chamar Editor Premium
             logger.info("[IMAGEM] Sintetizador não retornou campos. Editor Premium...")
-            sys.path.insert(0, str(Path("/home/bitnami/motor_rss")))
-            import llm_router
             photo_prompt = (
                 f"Você é o Editor de Fotografia do portal Brasileira.News.\n"
                 f"Para PESSOAS: busque nome + status jornalístico (preso, ministro, réu). Nunca detalhes de cena.\n"
@@ -258,11 +254,12 @@ def publish_consolidated(article: dict, sources: list[dict]) -> int | None:
             )
 
             # Registrar no controle (try/except separado — bug 8.5)
+            # Registrar no controle usando apenas a URL principal para não quebrar a deduplicação
             try:
-                source_urls = ",".join([s.get("url", "") for s in sources[:3]])
+                primary_url = sources[0].get("url", "") if sources else ""
                 db.register_published(
                     post_id=post_id,
-                    source_url=source_urls[:2048],
+                    source_url=primary_url[:768],
                     feed_name=FEED_NAME_CONSOLIDADA,
                     llm_used=llm_provider,
                 )

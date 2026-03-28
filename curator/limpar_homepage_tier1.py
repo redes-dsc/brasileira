@@ -1,4 +1,8 @@
 import os
+import sys
+import re
+import subprocess
+import pymysql
 from dotenv import load_dotenv
 
 # Load .env
@@ -27,34 +31,17 @@ print(f"Original size from DB: {len(content)} bytes")
 TITLES = {
     "home-politica": "Política & Poder",
     "home-economia": "Economia & Negócios",
-    "home-tecnologia": "Tecnologia",
-    "home-entretenimento": "Entretenimento & Famosos",
-    "home-ciencia": "Ciência",
-    "home-meioambiente": "Meio Ambiente & Sustentabilidade",
-    "home-bemestar": "Saúde & Bem-Estar",
-    "home-infraestrutura": "Infraestrutura & Cidades",
-    "home-cultura": "Cultura",
-    "home-sociedade": "Sociedade",
-    "home-saude": "Justiça" # According to curator_config, home-saude filter gets Justiça (73) and Home-Bemestar gets Saúde
-}
-
-# Fix matching names based on existing URLs:
-# home-ciencia -> Esportes na home? Wait, earlier we saw home-ciencia had Esportes category. I'll name it "Esportes" or "Ciência"? Let's set it to "Ciência & Inovação" since that's what shows up. No, let's keep it "Ciência".
-# Let's check curator_config in previous memory: home-ciencia uses 81 (Esportes). Let's title it "Ciência & Esportes" or just check what the actual category name is. Wait, 81 is Esportes. Why is it in home-ciencia?
-# Let's just use the exact names from the categories script:
-
-TITLES = {
-    "home-politica": "Política & Poder",
-    "home-economia": "Economia & Negócios",
     "home-tecnologia": "Tecnologia & Inovação",
     "home-entretenimento": "Entretenimento & Famosos",
-    "home-ciencia": "Ciência & Saúde", # We will see what matches best
+    "home-ciencia": "Ciência & Saúde",
     "home-meioambiente": "Meio Ambiente",
     "home-bemestar": "Saúde & Bem-Estar",
     "home-infraestrutura": "Infraestrutura & Cidades",
     "home-cultura": "Educação & Cultura",
     "home-sociedade": "Sociedade & Direitos Humanos",
-    "home-saude": "Direito & Justiça"
+    "home-esportes": "Esportes",
+    "home-justica": "Direito & Justiça",
+    "home-saude": "Saúde & Bem-Estar"
 }
 
 # For each block with a tag_slug, ensure it has custom_title="..."
@@ -123,23 +110,14 @@ with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
 print(f"New size: {len(content)} bytes")
 
 # 3. Apply to database
-escaped = content.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
-
-sql1 = f"UPDATE wp_7_postmeta SET meta_value='{escaped}' WHERE post_id=18135 AND meta_key='tdc_content';"
-sql2 = f"UPDATE wp_7_posts SET post_content='{escaped}' WHERE ID=18135;"
-
-sql_file = "/tmp/apply_tier1.sql"
-with open(sql_file, "w", encoding="utf-8") as f:
-    f.write(sql1 + "\n" + sql2)
-
-db_cmd = [
-    "/opt/bitnami/mariadb/bin/mariadb",
-    "-u", "bn_wordpress",
-    "-p" + os.getenv("DB_PASS"),
-    "-h", "127.0.0.1", "-P", "3306",
-    "bitnami_wordpress",
-]
-
 print("Applying to database...")
-subprocess.run(db_cmd, stdin=open(sql_file), check=True)
-print("Done! Applied clean tdc_content to homepage.")
+try:
+    c = conn.cursor()
+    c.execute(
+        "UPDATE wp_7_postmeta SET meta_value=%s WHERE post_id=18135 AND meta_key='tdc_content'",
+        (content,)
+    )
+    conn.commit()
+    print("Done! Applied clean tdc_content to homepage.")
+finally:
+    conn.close()

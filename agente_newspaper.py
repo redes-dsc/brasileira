@@ -135,12 +135,14 @@ class AgenteNewspaper:
 
     def executar_sql_wp(self, sql, salvar=False):
         """Executa SQL no banco WordPress via mariadb CLI."""
+        env = os.environ.copy()
+        env['MYSQL_PWD'] = WP_DB_PASS
         cmd = [
-            MARIADB_BIN, '-u', WP_DB_USER, f'-p{WP_DB_PASS}',
+            MARIADB_BIN, '-u', WP_DB_USER,
             '-h', WP_DB_HOST, '-P', WP_DB_PORT, WP_DB_NAME, '-N', '-e', sql
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
             if result.returncode != 0:
                 return {'sucesso': False, 'erro': result.stderr.strip()}
             return {'sucesso': True, 'resultado': result.stdout.strip()}
@@ -308,7 +310,8 @@ Responda em JSON com esta estrutura:
     def consultar_opcoes_tema(self, chave=None):
         """Consulta opções do tema no wp_options."""
         if chave:
-            sql = f"SELECT option_value FROM wp_7_options WHERE option_name='{chave}';"
+            chave_segura = chave.replace("'", "").replace('"', "").replace(";", "")
+            sql = f"SELECT option_value FROM wp_7_options WHERE option_name='{chave_segura}';"
         else:
             sql = ("SELECT option_name, LEFT(option_value, 200) FROM wp_7_options "
                    "WHERE option_name LIKE '%td_%' OR option_name LIKE '%newspaper%' "
@@ -317,10 +320,15 @@ Responda em JSON com esta estrutura:
 
     def contar_posts_categoria(self, cat_id):
         """Conta posts em uma categoria específica."""
+        try:
+            cat_id_seguro = int(cat_id)
+        except ValueError:
+            return {'sucesso': False, 'erro': 'ID invalido'}
+            
         result = self.executar_sql_wp(
             f"SELECT COUNT(*) FROM wp_7_posts p "
             f"JOIN wp_7_term_relationships tr ON p.ID = tr.object_id "
-            f"WHERE tr.term_taxonomy_id = {cat_id} AND p.post_status = 'publish';"
+            f"WHERE tr.term_taxonomy_id = {cat_id_seguro} AND p.post_status = 'publish';"
         )
         return result
 

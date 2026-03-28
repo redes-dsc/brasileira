@@ -184,10 +184,10 @@ class DeduplicationEngine:
 
         url_norm = self.normalize_url(url)
         if self.redis is not None:
-            is_new = await self.redis.sadd("dedup:urls", url_norm)
+            url_key = f"dedup:url:{self.hashlib.sha256(url_norm.encode('utf-8')).hexdigest()}"
+            is_new = await self.redis.set(url_key, "1", nx=True, ex=259200)  # 72h TTL per URL
             if not is_new:
                 return False
-            await self.redis.expire("dedup:urls", 259200)
 
         if self.db_pool is not None and titulo:
             domain = urlparse(url).netloc
@@ -216,6 +216,10 @@ class DeduplicationEngine:
                         article["near_duplicate_of"] = existing_url_hash
                         break
                 self._simhash_index[simhash] = url_hash
+                # Cap SimHash index at 50000 entries
+                if len(self._simhash_index) > 50000:
+                    keys = list(self._simhash_index.keys())
+                    self._simhash_index = dict(zip(keys[-30000:], [self._simhash_index[k] for k in keys[-30000:]]))
         return True
 
     async def rebuild_simhash_index(self) -> None:
@@ -265,12 +269,12 @@ class WorkerPool:
     async def start(self) -> None:
         self.producer = AIOKafkaProducer(
             bootstrap_servers=self.kafka_bootstrap,
-            value_serializer=lambda value: json.dumps(value, default=str).encode("utf-8"),
+            value_serializer=lambda value: json.dumps(value, default=str, ensure_ascii=False).encode("utf-8"),
             key_serializer=lambda key: key.encode("utf-8") if key else None,
             compression_type="lz4",
             linger_ms=10,
             batch_size=32768,
-            acks=1,
+            acks="all",
         )
         await self.producer.start()
         await self.scraper_engine.start()
@@ -320,7 +324,8 @@ class WorkerPool:
                     for article in articles:
                         is_new = await self.dedup.check_and_register(article)
                         if is_new:
-                            await self.producer.send(TOPIC_RAW_ARTICLES, key=str(fonte_id), value=article)
+                            article["fonte_tier"] = assignment.get("tier", "padrao")
+                            await self.producer.send_and_wait(TOPIC_RAW_ARTICLES, key=str(fonte_id), value=article)
                             new_articles += 1
                             self._stats["articles_collected"] += 1
                         else:

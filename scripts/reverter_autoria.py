@@ -11,11 +11,9 @@ print("\n=== SCRIPT DE EMERGENCIA: DEVOLVER PARA REDACAO ===")
 
 
 
-res_me = requests.get(f"{WP_URL}/users/me", headers=AUTH_HEADERS)
-
-id_redacao = res_me.json().get('id')
-
-nome_redacao = res_me.json().get('name')
+res_me_json = requests.get(f"{WP_URL}/users/me", headers=AUTH_HEADERS).json()
+id_redacao = res_me_json.get('id')
+nome_redacao = res_me_json.get('name')
 
 print(f"1. A verdadeira Redacao ({nome_redacao} - iapublicador) tem o ID: {id_redacao}")
 
@@ -50,14 +48,15 @@ print(f"\n3. INICIANDO TRANSFERENCIA: Tirando do Tiago (ID {id_tiago}) e passand
 
 
 corrigidos = 0
-
+page = 1
 while True:
-
-    res = requests.get(f"{WP_URL}/posts?author={id_tiago}&per_page=50", headers=AUTH_HEADERS)
-
+    res = requests.get(f"{WP_URL}/posts?author={id_tiago}&per_page=50&page={page}", headers=AUTH_HEADERS)
     if res.status_code != 200 or not res.json(): break
-
-    for p in res.json():
+    
+    posts_data = res.json()
+    if not posts_data: break
+    
+    for p in posts_data:
 
         print(f"   -> Transferindo: {p['title']['rendered'][:40]}...")
 

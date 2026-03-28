@@ -286,13 +286,13 @@ CATALOGO_FONTES = {
 
     "esg_sustentabilidade": [
 
-        {"nome": "Capital Reset", "url": "https://www.capitalreset.com/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Capital Reset", "url": "https://www.capitalreset.com/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "Página 22", "url": "https://pagina22.com.br/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Página 22", "url": "https://pagina22.com.br/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "Instituto Ethos", "url": "https://www.ethos.org.br/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Instituto Ethos", "url": "https://www.ethos.org.br/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "Ideia Sustentável", "url": "https://ideiasustentavel.com.br/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Ideia Sustentável", "url": "https://ideiasustentavel.com.br/feed/", "cat_id": CAT_ESG},
 
         {"nome": "CicloVivo", "url": "https://ciclovivo.com.br/feed/", "cat_id": CAT_MEIO_AMBIENTE},
 
@@ -310,19 +310,19 @@ CATALOGO_FONTES = {
 
         {"nome": "Por Dentro África", "url": "https://www.pordentrodaafrica.com/feed/", "cat_id": CAT_INTERNACIONAL},
 
-        {"nome": "ESG Today", "url": "https://www.esgtoday.com/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "ESG Today", "url": "https://www.esgtoday.com/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "Responsible Investor", "url": "https://www.responsible-investor.com/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Responsible Investor", "url": "https://www.responsible-investor.com/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "ESG Investor", "url": "https://www.esginvestor.net/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "ESG Investor", "url": "https://www.esginvestor.net/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "ImpactAlpha", "url": "https://impactalpha.com/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "ImpactAlpha", "url": "https://impactalpha.com/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "Just Capital", "url": "https://justcapital.com/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Just Capital", "url": "https://justcapital.com/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "Triple Pundit", "url": "https://www.triplepundit.com/feed/", "cat_id": CAT_ECONOMIA},
+        {"nome": "Triple Pundit", "url": "https://www.triplepundit.com/feed/", "cat_id": CAT_ESG},
 
-        {"nome": "CSRWire", "url": "https://www.csrwire.com/rss", "cat_id": CAT_ECONOMIA}
+        {"nome": "CSRWire", "url": "https://www.csrwire.com/rss", "cat_id": CAT_ESG}
 
     ],
 
@@ -846,7 +846,7 @@ CATALOGO_FONTES = {
 
         {"nome": "RTP Notícias", "url": "https://www.rtp.pt/noticias/rss", "cat_id": CAT_INTERNACIONAL},
 
-        {"nome": "Sputnik Brasil", "url": "https://noticiabrasil.net.br/export/rss2/archive/index.xml", "cat_id": CAT_INTERNACIONAL},
+
 
         {"nome": "RFI Portugal", "url": "https://www.rfi.fr/pt/rss", "cat_id": CAT_INTERNACIONAL},
 
@@ -868,7 +868,7 @@ CATALOGO_FONTES = {
 
         {"nome": "Yonhap", "url": "https://en.yna.co.kr/RSS/news.xml", "cat_id": CAT_INTERNACIONAL},
 
-        {"nome": "TASS", "url": "https://tass.com/rss/v2.xml", "cat_id": CAT_INTERNACIONAL},
+
 
         {"nome": "Prensa Latina", "url": "https://www.prensa-latina.cu/feed/", "cat_id": CAT_INTERNACIONAL},
 
@@ -906,13 +906,13 @@ CATALOGO_FONTES = {
 
         {"nome": "PBS NewsHour", "url": "https://www.pbs.org/newshour/feeds/rss/headlines", "cat_id": CAT_INTERNACIONAL},
 
-        {"nome": "RT", "url": "https://www.rt.com/rss/news/", "cat_id": CAT_INTERNACIONAL},
 
-        {"nome": "CGTN", "url": "https://www.cgtn.com/subscribe/rss/section/world.xml", "cat_id": CAT_INTERNACIONAL},
+
+
 
         {"nome": "CNA Singapore", "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml", "cat_id": CAT_INTERNACIONAL},
 
-        {"nome": "KCNA", "url": "https://kcnawatch.org/feed/", "cat_id": CAT_INTERNACIONAL}
+
 
     ]
 

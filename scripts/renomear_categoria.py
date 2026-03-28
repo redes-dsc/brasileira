@@ -12,16 +12,16 @@ Altera o nome da categoria e atualiza automaticamente todos os posts associados.
 
 
 import os
+import requests
+import base64
 from dotenv import load_dotenv
 
 # Carregar o .env
 load_dotenv()
 
 WP_URL = "https://brasileira.news/wp-json/wp/v2"
-
 WP_USER = "iapublicador"
-
-WP_APP_PASSWORD = os.getenv("WP_APP_PASS", "nWgboohRWZGLv2d7ebQgkf80")
+WP_APP_PASSWORD = os.getenv("WP_APP_PASS")
 
 
 
@@ -106,11 +106,8 @@ def alterar_nome_categoria(nome_antigo, nome_novo, slug_novo):
     
 
     if res_update.status_code == 200:
-
         print(f"✅ Sucesso! A categoria foi renomeada para '{nome_novo}'.")
-
-        print("Todos os posts já publicados que estavam em 'Continentes' agora mostram 'Internacional'!")
-
+        print(f"Todos os posts ja publicados agora refletem a categoria {nome_novo}!")
     else:
 
         print(f"[ERRO] Falha ao atualizar a categoria: {res_update.text}")

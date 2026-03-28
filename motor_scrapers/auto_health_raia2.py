@@ -3,11 +3,12 @@ import logging
 import sys
 import shutil
 import datetime
+import tempfile
+import requests
 import os
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, "/home/bitnami/motor_scrapers")
-from motor_scrapers_v2 import coletar_links_fonte
 from detector_estrategia import detectar_feed_nao_padrao
 
 LOG_FILE = "/home/bitnami/logs/health_autoroutines.log"
@@ -21,40 +22,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Raia2_AutoHealth")
 
-def process_fonte(fonte):
+def process_fonte(f_orig):
+    fonte = dict(f_orig) # Assuring immutability copy
     nome = fonte.get("nome", "Desconhecido")
     is_active = fonte.get("ativo", False)
     estrategia = fonte.get("estrategia", "A")
     
-    if not is_active or estrategia not in ("A", "", None):
+    # Allows recovery of "D" if the original URL is now functional
+    if not is_active:
         return fonte, False
         
+    url = fonte.get("url_noticias") or fonte.get("url_home", "")
+    if not url: return fonte, False
+    
     try:
-        # Silencia os logs do motor core
-        logging.getLogger("motor_scrapers").setLevel(logging.CRITICAL)
-        links = coletar_links_fonte(fonte)
+        # Pings homepage quickly instead of scraping production models heavily
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            if estrategia == "D":
+                logger.info(f"Fonte recuperada: {nome}")
+            return fonte, False # It's UP.
         
-        if not links:
-            url = fonte.get("url_noticias") or fonte.get("url_home", "")
-            feed_url = detectar_feed_nao_padrao(url)
-            if feed_url:
-                fonte["estrategia"] = "D"
-                fonte["url_feed"] = feed_url
-                logger.warning(f"Correcao Automatica | {nome} | Estrategia A -> D (Injetado RSS: {feed_url})")
-                return fonte, True
-            else:
-                logger.info(f"Falha de raspagem em {nome}, mas nenhum RSS encontrado.")
+        # If it's failing, try injecting RSS feed auto-correction
+        feed_url = detectar_feed_nao_padrao(url)
+        if feed_url and estrategia != "D":
+            fonte["estrategia"] = "D"
+            fonte["url_feed"] = feed_url
+            logger.warning(f"Correcao Automatica | {nome} | -> D (RSS: {feed_url})")
+            return fonte, True
+            
+        logger.info(f"Falha de raspagem em {nome}, nenhum RSS detectado.")
     except Exception as e:
         logger.error(f"Erro ignorado na saude de {nome}: {e}")
         
     return fonte, False
 
 def main():
-    logger.info("Iniciando rotina de auto-cura Motor Scrapers (Raia 2)...")
+    logger.info("Iniciando rotina de ping-healing Motor Scrapers (Raia 2)...")
     if not os.path.exists(SCRAPERS_FILE):
         return
         
-    shutil.copy2(SCRAPERS_FILE, BACKUP_FILE)
+    try:
+        shutil.copy2(SCRAPERS_FILE, BACKUP_FILE)
+    except Exception: pass
     
     with open(SCRAPERS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -72,12 +82,16 @@ def main():
             
     if modified_count > 0:
         data["scrapers"] = updated_fontes
-        with open(SCRAPERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(SCRAPERS_FILE), delete=False, encoding="utf-8") as tmp:
+            json.dump(data, tmp, ensure_ascii=False, indent=2)
+            temp_name = tmp.name
+        os.replace(temp_name, SCRAPERS_FILE)
         logger.info(f"Raia 2 Concluida! {modified_count} sites recuperados para Estrategia D.")
     else:
-        logger.info("Raia 2 Concluida! Sem sites recuperados/alterados hoje.")
-        os.remove(BACKUP_FILE)
+        logger.info("Raia 2 Concluida! Sem sites alterados hoje.")
+        try:
+            os.remove(BACKUP_FILE)
+        except: pass
 
 if __name__ == "__main__":
     main()

@@ -11,11 +11,13 @@ Pipeline automatizado de coleta, reescrita e publicação de notícias.
 
 
 
+import argparse
 import fcntl
 
 import json
 
 import logging
+import logging.handlers
 
 import os
 
@@ -33,11 +35,16 @@ from pathlib import Path
 import feedparser
 
 import requests
-
 from bs4 import BeautifulSoup
+import cloudscraper
 
+_SESSION = requests.Session()
 
+# Add parent directory to path for shared modules
+sys.path.insert(0, '/home/bitnami')
 
+from deduplicador_unificado import link_ja_processado
+from curador_imagens_unificado import is_official_source
 import config
 
 import db
@@ -62,7 +69,7 @@ def setup_logging():
 
     formatter = logging.Formatter("%(asctime)s | %(levelname)-7s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = logging.handlers.TimedRotatingFileHandler(log_file, when="midnight", backupCount=7, encoding="utf-8")
 
     file_handler.setFormatter(formatter)
 
@@ -209,8 +216,7 @@ def extract_full_content(url):
     try:
 
         headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-
-        resp = requests.get(url, headers=headers, timeout=config.HTTP_TIMEOUT)
+        resp = _SESSION.get(url, headers=headers, timeout=config.HTTP_TIMEOUT)
 
         resp.raise_for_status()
 
@@ -232,21 +238,18 @@ def extract_full_content(url):
 
                 if len(text) > 200:
 
-                    return text[:8000]
+                    return text[:8000], resp.text
 
         body = soup.find("body")
 
         if body:
+            return body.get_text(separator="\n", strip=True)[:8000], resp.text
 
-            return body.get_text(separator="\n", strip=True)[:8000]
-
-        return ""
+        return "", resp.text
 
     except Exception as e:
-
         logger.warning("Erro ao extrair conteúdo de %s: %s", url[:80], e)
-
-        return ""
+        return "", ""
 
 
 
@@ -255,8 +258,7 @@ def extract_html_content(url):
     try:
 
         headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-
-        resp = requests.get(url, headers=headers, timeout=config.HTTP_TIMEOUT)
+        resp = _SESSION.get(url, headers=headers, timeout=config.HTTP_TIMEOUT)
 
         resp.raise_for_status()
 
@@ -322,7 +324,7 @@ def process_article(entry, categories):
 
     logger.info("─── Processando: %s ───", title[:70])
 
-    content = extract_full_content(link)
+    content, html_content = extract_full_content(link)
 
     if not content or len(content) < 100:
 
@@ -357,14 +359,12 @@ def process_article(entry, categories):
 
         return False
 
-    html_content = extract_html_content(link)
+    # html_content já recebido via extract_full_content no topo do pipeline
 
     keywords = " ".join(article_data.get("tags", [])[:3])
 
     # Verificar se fonte é oficial (EBC, Gov.br, Senado, etc.)
     # Se for, o Tier 1 do curador vai puxar a foto direto do HTML — sem gerar queries.
-    sys.path.insert(0, str(Path("/home/bitnami")))
-    from curador_imagens_unificado import is_official_source
     source_is_official = is_official_source(link)
 
     explicit_gov = ""
@@ -571,6 +571,8 @@ def run_cycle():
 
     logger.info("=" * 60)
 
+    return published_count, failed_count
+
 
 
 LOCK_FILE = Path(__file__).resolve().parent / "motor_rss_v2.lock"
@@ -630,7 +632,23 @@ def release_lock():
             pass
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Motor RSS v2 — brasileira.news")
+    parser.add_argument('--single-cycle', action='store_true', 
+                        help='Run one cycle and exit (same as default behavior)')
+    return parser.parse_args()
+
+
 def main():
+
+    args = parse_args()
+    
+    # Log mode
+    if args.single_cycle:
+        logger.info("Running in single-cycle mode")
+    else:
+        logger.info("Running in continuous mode (single cycle for cron)")
 
     if not acquire_lock():
         logger.warning("Outra instância do Motor RSS v2 já está em execução. Saindo.")
@@ -651,13 +669,21 @@ def main():
 
         logger.error("Erro ao criar tabela de controle: %s", e)
 
+    published = 0
+    failed = 0
     try:
-        run_cycle()
+        result = run_cycle()
+        if result:
+            published, failed = result
+        logger.info("Single cycle complete — Published: %d | Failed: %d", published, failed)
     except Exception as e:
         logger.error("Erro fatal no ciclo: %s", e, exc_info=True)
+        release_lock()
+        sys.exit(1)
 
     release_lock()
     logger.info("Motor encerrado graciosamente.")
+    sys.exit(0)
 
 
 

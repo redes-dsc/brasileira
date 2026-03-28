@@ -158,8 +158,8 @@ def collect_sources(topic: dict) -> list[dict]:
         # Falha definitiva na extração (Erro ou conteúdo muito curto/paywall)
         if not result or word_count < MIN_CONTENT_WORDS:
             logger.warning("Falha irredutível ao extrair URL %s", url)
-            content = f"[AVISO DO SISTEMA: Não foi possível realizar a leitura do texto completo de '{portal_name}' devido a bloqueios rígidos (Paywall/Erro Técnico) na URL. A IA consolidatória DEVE MENCIONAR neste artigo que este veículo também noticiou os fatos e cobriu o tema, garantindo pluralidade de fontes, mas que detalhes exclusivos do texto original não puderam ser auferidos.]"
-            word_count = len(content.split())
+            content = ""
+            word_count = 0
             if not result:
                 fallback_title = next((t.get("title", "") for t in topic.get("titles", []) if t.get("url") == url), "Título Indisponível")
                 result = {"titulo": fallback_title, "imagem": ""}
@@ -188,7 +188,7 @@ def _build_fontes_texto(sources: list[dict]) -> str:
             f"--- FONTE {i}: {src['portal_name']} ---\n"
             f"URL: {src['url']}\n"
             f"Título: {src['titulo']}\n\n"
-            f"{src['conteudo'][:4000]}\n"  # Limitar cada fonte a ~4000 chars
+            f"{src['conteudo'][:1500]}\n"  # Limitar cada fonte a ~1500 chars limitando tokens
         )
         blocos.append(bloco)
     return "\n\n".join(blocos)

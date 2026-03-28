@@ -19,7 +19,6 @@ import os
 import re
 import struct
 import json
-import random
 import time
 from urllib.parse import urlparse, quote_plus, urljoin
 from typing import Optional, Tuple
@@ -195,79 +194,159 @@ def _tier2_agencia_brasil(keywords: str) -> str | None:
     """Busca direta no acervo de fotos da Agência Brasil (EBC)."""
     if not keywords:
         return None
+    
+    # Padrões de imagens de tema/layout a ignorar
+    skip_patterns = ["theme", "logo", "icon", "sprite", "svg", "transparencia", "share", "footer", "header"]
+    
     try:
-        search_url = f"https://agenciabrasil.ebc.com.br/busca?keys={quote_plus(keywords)}&type=foto"
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; BrasileiraNewsBot/1.0)"}
-        resp = requests.get(search_url, headers=headers, timeout=10)
+        # URL correta de busca (atualizada em 2026)
+        search_url = f"https://agenciabrasil.ebc.com.br/search/site/{quote_plus(keywords)}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        resp = requests.get(search_url, headers=headers, timeout=15)
+        
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
-            for img in soup.select(".views-row img, .field-type-image img, article img"):
+            
+            # Imagens da EBC vêm do CDN imagens.ebc.com.br
+            for img in soup.find_all("img"):
                 src = img.get("src") or img.get("data-src")
-                if src:
-                    if src.startswith("/"):
-                        src = f"https://agenciabrasil.ebc.com.br{src}"
-                    # Converter thumbnail para imagem grande
+                if not src:
+                    continue
+                    
+                # Ignorar imagens de layout/tema
+                if any(p in src.lower() for p in skip_patterns):
+                    continue
+                
+                # Aceitar imagens do CDN da EBC ou do domínio principal
+                if "imagens.ebc.com.br" in src or "agenciabrasil.ebc.com.br/sites/default/files" in src:
+                    # Tentar obter URL original da imagem do CDN
+                    # Formato: https://imagens.ebc.com.br/HASH=/WxH/smart/https://agenciabrasil.ebc.com.br/...
+                    if "imagens.ebc.com.br" in src and "/smart/" in src:
+                        # Extrair URL original depois de /smart/
+                        original_match = re.search(r'/smart/(https?://[^"]+)', src)
+                        if original_match:
+                            src = original_match.group(1)
+                    
+                    # Converter thumbnail para imagem completa
                     src = re.sub(r'/styles/[^/]+/public/', '/files/', src)
+                    
                     if is_valid_image_url(src):
-                        logger.info(f"[TIER 2] Agência Brasil: {src}")
+                        logger.info(f"[TIER 2] Agência Brasil: {src[:80]}...")
                         return src
+                        
     except Exception as e:
         logger.warning(f"[TIER 2] Erro Agência Brasil: {e}")
     return None
 
 def _tier2_senado_fotos(keywords: str) -> str | None:
-    """Busca no acervo de fotos do Senado Federal (559K+ fotos)."""
+    """Busca no acervo de fotos do Senado Federal via notícias e Flickr oficial."""
     if not keywords:
         return None
+    
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    skip_patterns = ["logo", "icon", "sprite", "banner", "background", "footer", "header"]
+    
     try:
-        api_url = "https://www12.senado.leg.br/noticias/fotos"
-        params = {"SearchableText": keywords}
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; BrasileiraNewsBot/1.0)"}
-        resp = requests.get(api_url, params=params, headers=headers, timeout=10)
+        # Estratégia 1: Buscar nas notícias do Senado (@@search)
+        search_url = f"https://www12.senado.leg.br/noticias/@@busca?SearchableText={quote_plus(keywords)}"
+        resp = requests.get(search_url, headers=headers, timeout=15)
+        
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
-            for img in soup.select(".tileImage, .photoAlbumEntryImage, img[src*='/fotos/']"):
+            
+            # Buscar imagens nas notícias
+            for img in soup.find_all("img"):
                 src = img.get("src") or img.get("data-src")
-                if src:
+                if not src:
+                    continue
+                    
+                if any(p in src.lower() for p in skip_patterns):
+                    continue
+                
+                # Aceitar imagens do domínio do Senado
+                if "senado.leg.br" in src and ("/noticias/" in src or "/materias/" in src or "/imagens/" in src):
                     if src.startswith("/"):
                         src = f"https://www12.senado.leg.br{src}"
+                    
                     if is_valid_image_url(src):
-                        logger.info(f"[TIER 2] Senado: {src}")
+                        logger.info(f"[TIER 2] Senado: {src[:80]}...")
                         return src
+        
+        # Estratégia 2: Flickr oficial do Senado
+        flickr_url = "https://www.flickr.com/photos/agaborges/search/?q=" + quote_plus(keywords)
+        resp = requests.get(flickr_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            # Extrair URLs de imagens do HTML do Flickr
+            matches = re.findall(r'https://live\.staticflickr\.com/\d+/\d+_[a-z0-9]+_[bz]\.(jpg|png)', resp.text)
+            if matches:
+                img_url = f"https://live.staticflickr.com/{matches[0][0]}"
+                # Reconstruir URL completa a partir do match
+                full_match = re.search(r'(https://live\.staticflickr\.com/\d+/\d+_[a-z0-9]+_[bz]\.(jpg|png))', resp.text)
+                if full_match:
+                    logger.info(f"[TIER 2] Senado via Flickr: {full_match.group(1)[:80]}...")
+                    return full_match.group(1)
+                    
     except Exception as e:
         logger.warning(f"[TIER 2] Erro Senado: {e}")
     return None
 
 def _tier2_camara_fotos(keywords: str) -> str | None:
-    """Busca na API de fotos da Câmara dos Deputados."""
+    """Busca no portal de notícias da Câmara dos Deputados."""
     if not keywords:
         return None
+    
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    skip_patterns = ["logo", "icon", "sprite", "banner", "background", "footer", "header", "menu"]
+    
     try:
-        api_url = "https://www.camara.leg.br/api/v1/busca"
-        params = {"q": keywords, "collection": "imagens", "rows": 3}
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; BrasileiraNewsBot/1.0)"}
-        resp = requests.get(api_url, params=params, headers=headers, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-            items = data.get("results", data.get("items", []))
-            for item in items:
-                img_url = item.get("url") or item.get("image_url") or item.get("thumbnail")
-                if img_url and is_valid_image_url(img_url):
-                    logger.info(f"[TIER 2] Câmara: {img_url}")
-                    return img_url
-        # Fallback: scraping da galeria
-        gallery_url = f"https://www.camara.leg.br/internet/bancoimagem/resultadoPesquisa.asp?textoPesquisa={quote_plus(keywords)}"
-        resp = requests.get(gallery_url, headers=headers, timeout=10)
+        # Estratégia 1: Busca no portal de notícias
+        search_url = f"https://www.camara.leg.br/busca-portal?contextoBusca=BuscaGeral&pagina=1&order=relevancia&abaEspecifica=false&filtros=%5B%5D&q={quote_plus(keywords)}"
+        resp = requests.get(search_url, headers=headers, timeout=15)
+        
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
-            for img in soup.select("img[src*='bancoimagem'], img[src*='/fotos/']"):
-                src = img.get("src")
-                if src:
+            
+            # Buscar imagens nos resultados
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src")
+                if not src:
+                    continue
+                    
+                if any(p in src.lower() for p in skip_patterns):
+                    continue
+                
+                # Aceitar imagens do domínio da Câmara
+                if "camara.leg.br" in src:
                     if src.startswith("/"):
                         src = f"https://www.camara.leg.br{src}"
+                    
                     if is_valid_image_url(src):
-                        logger.info(f"[TIER 2] Câmara (gallery): {src}")
+                        logger.info(f"[TIER 2] Câmara: {src[:80]}...")
                         return src
+        
+        # Estratégia 2: Página principal de notícias (tem imagens recentes)
+        news_url = "https://www.camara.leg.br/noticias"
+        resp = requests.get(news_url, headers=headers, timeout=10)
+        
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src")
+                if not src:
+                    continue
+                    
+                if any(p in src.lower() for p in skip_patterns):
+                    continue
+                
+                if "/noticias/" in src or "/imagens/" in src or "/midias/" in src:
+                    if src.startswith("/"):
+                        src = f"https://www.camara.leg.br{src}"
+                    
+                    if is_valid_image_url(src):
+                        logger.info(f"[TIER 2] Câmara (news): {src[:80]}...")
+                        return src
+                        
     except Exception as e:
         logger.warning(f"[TIER 2] Erro Câmara: {e}")
     return None
@@ -361,6 +440,14 @@ def tier3a_flickr_gov(keywords: str) -> str | None:
             params=params,
             timeout=10
         )
+        if resp.status_code == 429:
+            logger.warning("[TIER 3A] Rate limited (429), retrying in 30s...")
+            time.sleep(30)
+            resp = requests.get(
+                "https://api.flickr.com/services/rest/",
+                params=params,
+                timeout=10
+            )
         if resp.status_code == 200:
             data = resp.json()
             if data.get("stat") == "fail":
@@ -424,6 +511,10 @@ def tier3b_wikimedia(keywords: str) -> str | None:
             "srlimit": 5,
         }
         search_res = requests.get(search_url, params=search_params, headers=headers, timeout=10)
+        if search_res.status_code == 429:
+            logger.warning("[TIER 3B] Rate limited (429), retrying in 30s...")
+            time.sleep(30)
+            search_res = requests.get(search_url, params=search_params, headers=headers, timeout=10)
         if search_res.status_code != 200:
             return None
         
@@ -485,6 +576,10 @@ def tier3c_google_cse(keywords: str) -> str | None:
             "imgSize": "large"
         }
         res = requests.get(url, params=params, timeout=10)
+        if res.status_code == 429:
+            logger.warning("[TIER 3C] Rate limited (429), retrying in 30s...")
+            time.sleep(30)
+            res = requests.get(url, params=params, timeout=10)
         if res.status_code == 200:
             data = res.json()
             for item in data.get("items", []):
@@ -495,6 +590,77 @@ def tier3c_google_cse(keywords: str) -> str | None:
     except Exception as e:
         logger.warning(f"[TIER 3C] Erro Google CSE: {e}")
     return None
+
+
+def tier3d_openverse(keywords: str) -> tuple[str | None, str]:
+    """
+    Busca no OpenVerse (WordPress) - API gratuita para imagens Creative Commons.
+    Inclui Flickr CC, Wikimedia, museus, e outras fontes livres.
+    Retorna (url, credit) ou (None, "").
+    """
+    if not keywords:
+        return None, ""
+    
+    headers = {
+        "User-Agent": "BrasileiraNewsBot/1.0 (https://brasileira.news)"
+    }
+    
+    try:
+        # OpenVerse API - não requer autenticação para buscas básicas
+        api_url = "https://api.openverse.org/v1/images/"
+        params = {
+            "q": keywords,
+            "page_size": 5,
+            "license_type": "commercial,modification",  # Licenças que permitem uso comercial
+            "mature": "false",
+        }
+        
+        resp = requests.get(api_url, params=params, headers=headers, timeout=15)
+        
+        if resp.status_code == 429:
+            logger.warning("[TIER 3D] Rate limited (429), retrying in 30s...")
+            time.sleep(30)
+            resp = requests.get(api_url, params=params, headers=headers, timeout=15)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            
+            for item in results:
+                img_url = item.get("url")
+                
+                # Verificar se é uma imagem válida
+                if not img_url or not is_valid_image_url(img_url):
+                    continue
+                
+                # Verificar dimensões mínimas
+                width = item.get("width", 0)
+                height = item.get("height", 0)
+                if width < 400 or height < 300:
+                    continue
+                
+                # Montar crédito
+                creator = item.get("creator", "")
+                source = item.get("source", "OpenVerse")
+                license_name = item.get("license", "CC")
+                
+                if creator:
+                    credit = f"Foto: {creator} / {source} ({license_name})"
+                else:
+                    credit = f"Imagem: {source} ({license_name})"
+                
+                logger.info(f"[TIER 3D] OpenVerse: {img_url[:60]}... ({source})")
+                return img_url, credit
+        
+        elif resp.status_code == 429:
+            logger.warning("[TIER 3D] OpenVerse: Rate limit still failing after retry")
+        else:
+            logger.debug(f"[TIER 3D] OpenVerse: HTTP {resp.status_code}")
+            
+    except Exception as e:
+        logger.warning(f"[TIER 3D] Erro OpenVerse: {e}")
+    
+    return None, ""
 
 # =====================================================================
 # TIER 4: STOCK APIs
@@ -511,6 +677,15 @@ def tier4_stock_apis(keywords: str) -> tuple[str | None, str]:
                 headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
                 timeout=10
             )
+            if res.status_code == 429:
+                logger.warning("[TIER 4] Unsplash rate limited (429), retrying in 30s...")
+                time.sleep(30)
+                res = requests.get(
+                    "https://api.unsplash.com/photos/random",
+                    params={"query": keywords, "orientation": "landscape"},
+                    headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+                    timeout=10
+                )
             if res.status_code == 200:
                 data = res.json()
                 img_url = data.get("urls", {}).get("regular")
@@ -530,6 +705,15 @@ def tier4_stock_apis(keywords: str) -> tuple[str | None, str]:
                 headers={"Authorization": PEXELS_API_KEY},
                 timeout=10
             )
+            if res.status_code == 429:
+                logger.warning("[TIER 4] Pexels rate limited (429), retrying in 30s...")
+                time.sleep(30)
+                res = requests.get(
+                    "https://api.pexels.com/v1/search",
+                    params={"query": keywords, "per_page": 1, "orientation": "landscape"},
+                    headers={"Authorization": PEXELS_API_KEY},
+                    timeout=10
+                )
             if res.status_code == 200:
                 photos = res.json().get("photos", [])
                 if photos:
@@ -549,6 +733,14 @@ def tier4_stock_apis(keywords: str) -> tuple[str | None, str]:
                 params={"key": PIXABAY_API_KEY, "q": keywords, "image_type": "photo", "orientation": "horizontal"},
                 timeout=10
             )
+            if res.status_code == 429:
+                logger.warning("[TIER 4] Pixabay rate limited (429), retrying in 30s...")
+                time.sleep(30)
+                res = requests.get(
+                    "https://pixabay.com/api/",
+                    params={"key": PIXABAY_API_KEY, "q": keywords, "image_type": "photo", "orientation": "horizontal"},
+                    timeout=10
+                )
             if res.status_code == 200:
                 hits = res.json().get("hits", [])
                 if hits:
@@ -569,6 +761,15 @@ def tier4_stock_apis(keywords: str) -> tuple[str | None, str]:
                 headers={"Accept": "application/json", "x-freepik-api-key": FREEPIK_API_KEY},
                 timeout=10
             )
+            if res.status_code == 429:
+                logger.warning("[TIER 4] Freepik rate limited (429), retrying in 30s...")
+                time.sleep(30)
+                res = requests.get(
+                    "https://api.freepik.com/v1/resources",
+                    params={"term": keywords, "per_page": 1, "filters[orientation]": "landscape", "filters[content_type]": "photo"},
+                    headers={"Accept": "application/json", "x-freepik-api-key": FREEPIK_API_KEY},
+                    timeout=10
+                )
             if res.status_code == 200:
                 items = res.json().get("data", [])
                 if items:
@@ -593,7 +794,7 @@ def validar_imagem_multimodal(image_data: bytes, titulo: str) -> tuple[bool, str
     Retorna (aprovada, motivo).
     """
     if len(image_data) < 5000:
-        return True, "imagem muito pequena para validação"
+        return False, "imagem muito pequena (provável ícone/placeholder)"
     
     try:
         import base64
@@ -818,7 +1019,14 @@ def upload_to_wordpress(image_url: str, filename: str, alt_text: str = "", capti
             auth=auth, headers=headers, data=image_data, timeout=30
         )
         if up_resp.status_code in (200, 201):
-            media_id = up_resp.json().get("id")
+            try:
+                media_id = up_resp.json().get("id")
+            except Exception as json_err:
+                logger.warning(f"[Upload] Falha ao parsear JSON da resposta WP: {json_err}")
+                return None
+            if not media_id:
+                logger.warning("[Upload] Resposta WP sem media_id")
+                return None
             logger.info(f"Imagem uploaded sucesso: media_id={media_id}")
             
             # Registrar no catálogo anti-repetição
@@ -861,6 +1069,7 @@ _CREDIT_TEMPLATES = {
     "tier3a_flickr": "Foto: {photographer} / Flickr (CC BY)",
     "tier3b_wikimedia": "Imagem sob Licença Creative Commons via Wikimedia Commons",
     "tier3c_cse": "Foto: Reprodução / {domain}",
+    "tier3d_openverse": "Imagem sob Licença Creative Commons via OpenVerse",
     "tier4_unsplash": "Foto: {photographer} / Unsplash",
     "tier4_pexels": "Foto: {photographer} / Pexels",
     "tier4_pixabay": "Foto: {photographer} / Pixabay",
@@ -926,7 +1135,7 @@ def _record_tier_success(tier_name: str, title: str = ""):
         
         today = datetime.now().strftime("%Y-%m-%d")
         if today not in metrics:
-            metrics[today] = {"tier1": 0, "tier2": 0, "tier3a": 0, "tier3b": 0, "tier4": 0, "tier5_placeholder": 0, "total": 0}
+            metrics[today] = {"tier1": 0, "tier2": 0, "tier3a": 0, "tier3b": 0, "tier3d": 0, "tier4": 0, "tier5_placeholder": 0, "total": 0}
         
         metrics[today][tier_name] = metrics[today].get(tier_name, 0) + 1
         metrics[today]["total"] = metrics[today].get("total", 0) + 1
@@ -1062,6 +1271,17 @@ def get_best_image_for_post(
                 _record_tier_success("tier3b", title)
                 return media_id
         logger.debug(f"[TIER 3B] Nenhum resultado para: {q}")
+
+    # TIER 3D: OpenVerse (WordPress) — imagens Creative Commons gratuitas
+    for q in query_commons:
+        tier3d_url, tier3d_credit = tier3d_openverse(q)
+        if tier3d_url:
+            alt_text, _ = gerar_legenda_alt_text(title, "tier3d_openverse", tier3d_url)
+            media_id = upload_to_wordpress(tier3d_url, safe_filename, alt_text=alt_text, caption=tier3d_credit)
+            if media_id:
+                _record_tier_success("tier3d", title)
+                return media_id
+        logger.debug(f"[TIER 3D] Nenhum resultado para: {q}")
 
     # TIER 4: Stock API (Unsplash/Pexels) - GATILHO CAUTELAR
     category_blocks = ["politica", "justica", "esportes", "celebridades"]

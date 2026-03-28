@@ -9,7 +9,7 @@ load_dotenv()
 DB_USER = "bn_wordpress"
 DB_PASS = os.getenv("DB_PASS")
 DB_NAME = "bitnami_wordpress"
-PUB_ID = "ca-pub-7252039297007966"
+PUB_ID = os.getenv('ADSENSE_PUB_ID')
 
 def run_homogenization():
     print("Conectando ao banco de dados...")

@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+.pytest_cache
+docs/
+tests/
+*.md
+!requirements-base.txt
+.git
+.vscode-server

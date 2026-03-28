@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 
+import requests
 import config
 import db
 from config_consolidado import (
@@ -38,7 +39,7 @@ def check_recent_coverage(topic_title: str, hours: int = DEDUP_WINDOW_HOURS) -> 
             cursor = conn.cursor()
             cursor.execute(
                 f"""
-                SELECT ID, post_title, post_date, post_content, post_status
+                SELECT ID, post_title, post_date, post_status
                 FROM {db._t('posts')}
                 WHERE post_status IN ('publish', 'draft')
                   AND post_date >= DATE_SUB(NOW(), INTERVAL %s HOUR)
@@ -54,7 +55,7 @@ def check_recent_coverage(topic_title: str, hours: int = DEDUP_WINDOW_HOURS) -> 
         for post in posts:
             post_title = _normalize_for_comparison(post.get("post_title", ""))
             similarity = SequenceMatcher(None, normalized_topic, post_title).ratio()
-            if similarity >= 0.55:  # threshold mais alto que clustering
+            if similarity >= 0.80:  # threshold mais alto para evitar falsos positivos
                 logger.info(
                     "Cobertura existente encontrada (sim=%.2f): '%s' vs '%s'",
                     similarity, topic_title[:50], post.get("post_title", "")[:50],
@@ -115,7 +116,6 @@ def update_existing_post(post_id: int, new_content: str, new_sources: list[str])
     Atualiza post existente via WP REST API (PATCH).
     Adiciona nota de atualização no início.
     """
-    import requests
 
     now = datetime.now().strftime("%H:%M")
     sources_str = ", ".join(new_sources[:3])

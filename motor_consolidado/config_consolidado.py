@@ -7,15 +7,14 @@ import os
 import sys
 from pathlib import Path
 
-# Adicionar motor_rss e motor_scrapers ao path para reutilizar módulos
-_BITNAMI = Path("/home/bitnami")
-sys.path.insert(0, str(_BITNAMI / "motor_rss"))
-sys.path.insert(0, str(_BITNAMI / "motor_scrapers"))
-sys.path.insert(0, str(_BITNAMI))
+# Adicionar motor_rss e motor_scrapers ao path
+_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_DIR / "motor_rss"))
+sys.path.insert(0, str(_DIR / "motor_scrapers"))
 
 # Re-exportar config do motor_rss (carrega .env com WP, DB, LLM keys etc.)
 from dotenv import load_dotenv
-load_dotenv(_BITNAMI / "motor_rss" / ".env")
+load_dotenv(_DIR / "motor_rss" / ".env")
 
 # ── Portais Monitorados ─────────────────────────────────
 
@@ -29,6 +28,26 @@ TIER1_PORTALS = [
             ".feed-post-body-title a",
             "h2 a",
         ],
+    },
+    {
+        "name": "Brasil 247",
+        "home_url": "https://www.brasil247.com",
+        "ultimas_url": "https://www.brasil247.com/ultimas-noticias",
+        "selectors": [
+            "article a",
+            "h2 a",
+        ],
+        "rss_url": "https://www.brasil247.com/feed",
+    },
+    {
+        "name": "Jovem Pan",
+        "home_url": "https://jovempan.com.br",
+        "ultimas_url": "https://jovempan.com.br/noticias",
+        "selectors": [
+            "h2.post-title a",
+            "article a",
+        ],
+        "rss_url": "https://jovempan.com.br/feed",
     },
     {
         "name": "UOL",
@@ -154,7 +173,7 @@ MAIS_LIDAS_PORTALS = [
     {
         "name": "UOL",
         "url": "https://www.uol.com.br/",
-        "rss_url": "http://rss.uol.com.br/feed/noticias.xml",
+        "rss_url": "https://rss.uol.com.br/feed/noticias.xml",
         "selectors": [
             ".most-read a",
             '[class*="mais-lidas"] a',
@@ -196,15 +215,15 @@ STOPWORDS_PT = {
 
 # ── Thresholds ──────────────────────────────────────────
 
-SIMILARITY_THRESHOLD = 0.45
-MIN_SOURCES_TRENDING = 1
+SIMILARITY_THRESHOLD = 0.65  # Considera duplicata se 65% das palavras-chave baterem
+MIN_SOURCES_TRENDING = 2
 MIN_CONTENT_WORDS = 150
 MAX_CONTENT_WORDS_PAY = 100  # abaixo disso = paywall
 MIN_SYNTHESIS_WORDS = 600
 MAX_SYNTHESIS_WORDS = 1200
-MAX_PLAGIARISM_RATIO = 0.40
+MAX_PLAGIARISM_RATIO = 0.45  # Raised from 0.40 to 0.45 — Portuguese news has natural vocabulary overlap
 MAX_SOURCES_PER_TOPIC = 7
-MIN_SOURCES_PER_TOPIC = 1
+MIN_SOURCES_PER_TOPIC = 2
 
 # ── Limites operacionais ────────────────────────────────
 
@@ -230,11 +249,6 @@ LOG_FILE = LOG_DIR / "raia3_consolidado.log"
 
 DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
 PUBLISH_AS_DRAFT = os.getenv("PUBLISH_AS_DRAFT", "0") == "1"
-
-# ── Temas Proibidos ─────────────────────────────────────
-
-# Removido a pedido: entretenimento e fofocas agora são permitidos
-TEMAS_PROIBIDOS = []
 
 # ── Prioridade Editorial ────────────────────────────────
 

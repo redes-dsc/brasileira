@@ -1,122 +1,84 @@
-"""Agente Fotógrafo com pipeline de 4 tiers."""
+"""Pipeline Fotógrafo: 4-tier fallback para featured image."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+import logging
+from typing import Any, Optional
 
-from fotografo.clip_validator import CLIPValidator
-from fotografo.query_generator import QueryGenerator
-from fotografo.tier1_original import Tier1Original
-from fotografo.tier2_stocks import Tier2Stocks
-from fotografo.tier3_generative import Tier3Generative
-from fotografo.tier4_placeholder import Tier4Placeholder
+from .tier1_original import Tier1Extractor
+from .tier2_stocks import Tier2StockSearch
+from .tier3_generative import Tier3Generator
+from .tier4_placeholder import Tier4Placeholder
+from .query_generator import generate_image_query
 
-
-@dataclass(slots=True)
-class ImageAttachedEvent:
-    post_id: int
-    article_id: str
-    media_id: int | None
-    tier_used: str
-    api_used: str | None
-    query_used: str | None
-    clip_score: float | None
-    image_url: str | None
-    attribution: str
-    ai_generated: bool
-    total_time_ms: int
-    rounds_attempted: int
-    timestamp: datetime
-    fotografo_id: str
+logger = logging.getLogger(__name__)
 
 
 class FotografoAgent:
-    """Processa eventos article-published e garante featured image."""
+    """Pipeline de 4 tiers com fallback garantido para imagem editorial."""
 
-    def __init__(self, router, wp_uploader, instance_id: str = "fotografo-01"):
+    def __init__(self, router=None):
         self.router = router
-        self.wp_uploader = wp_uploader
-        self.instance_id = instance_id
-        self.query_gen = QueryGenerator(router)
-        self.clip = CLIPValidator()
-        self.tier1 = Tier1Original()
-        self.tier2 = Tier2Stocks()
-        self.tier3 = Tier3Generative()
+        self.tier1 = Tier1Extractor()
+        self.tier2 = Tier2StockSearch()
+        self.tier3 = Tier3Generator()
         self.tier4 = Tier4Placeholder()
 
-    async def process_event(self, event: dict) -> ImageAttachedEvent:
-        import time
-
-        start = time.time()
-        post_id = int(event["post_id"])
-        article_id = event.get("article_id", str(post_id))
-        title = event.get("titulo", "")
-        lead = event.get("lead", "")
-        editoria = event.get("editoria", "default")
+    async def processar(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Processa evento article-published e retorna imagem selecionada."""
+        titulo = event.get("titulo", "")
+        editoria = event.get("editoria", "geral")
+        html_content = event.get("conteudo_html")
         url_fonte = event.get("url_fonte", "")
-        html_fonte = event.get("html_fonte")
+        og_image = event.get("og_image")
+        wp_post_id = event.get("wp_post_id")
 
-        queries = await self.query_gen.generate(title=title, content=lead, editoria=editoria, source_url=url_fonte)
-        selected = None
-        tier_used = "tier4"
-        query_used = None
+        logger.info("Fotógrafo processando: wp_post_id=%s titulo=%s", wp_post_id, titulo[:60])
 
-        result_t1 = await self.tier1.extract(url_fonte, html_fonte)
-        if result_t1["success"]:
-            candidate = result_t1["candidate"]
-            score = await self.clip.score(candidate["url"], f"{title}. {lead}")
-            if score >= 0.15:
-                candidate["clip_score"] = score
-                selected = candidate
-                tier_used = "tier1"
-                query_used = "og:image extraction"
+        # Tier 1: Extração original
+        result = await self.tier1.extract(html_content, url_fonte, og_image)
+        if result.get("success"):
+            logger.info("Tier 1 sucesso (%s) para wp_post_id=%s", result.get("source"), wp_post_id)
+            return self._build_result(result, wp_post_id, editoria)
 
-        if selected is None:
-            result_t2 = await self.tier2.search(queries.get("tier2", []))
-            if result_t2["success"]:
-                candidate = result_t2["candidate"]
-                score = await self.clip.score(candidate["url"], f"{title}. {lead}")
-                if score >= 0.17:
-                    candidate["clip_score"] = score
-                    selected = candidate
-                    tier_used = "tier2"
-                    query_used = result_t2.get("query_used")
+        # Gerar query para busca
+        search_query = titulo
+        if self.router:
+            try:
+                search_query = await generate_image_query(self.router, titulo, editoria)
+            except Exception:
+                logger.debug("Query generation falhou, usando título")
 
-        if selected is None:
-            candidate = await self.tier3.generate(queries.get("tier3", []), article_title=title, editoria=editoria)
-            if candidate is not None:
-                selected = candidate
-                tier_used = "tier3"
-                query_used = candidate.get("ai_prompt")
+        # Tier 2: Stock photos
+        result = await self.tier2.search(search_query, editoria)
+        if result.get("success"):
+            logger.info("Tier 2 sucesso (%s) para wp_post_id=%s", result.get("source"), wp_post_id)
+            return self._build_result(result, wp_post_id, editoria)
 
-        if selected is None:
-            selected = self.tier4.get_placeholder(editoria)
-            tier_used = "tier4"
-            query_used = "placeholder"
+        # Tier 3: AI generativa
+        result = await self.tier3.generate(search_query, editoria)
+        if result.get("success"):
+            logger.info("Tier 3 sucesso (%s) para wp_post_id=%s", result.get("source"), wp_post_id)
+            return self._build_result(result, wp_post_id, editoria)
 
-        success, media_id = await self.wp_uploader.upload_and_attach(
-            image_url=selected["url"],
-            post_id=post_id,
-            article_title=title,
-            attribution=selected["attribution"],
-            wp_media_id=selected.get("wp_media_id"),
-        )
+        # Tier 4: Placeholder (GARANTIA — nunca falha, Regra #3)
+        result = self.tier4.get_placeholder(editoria)
+        logger.info("Tier 4 placeholder para wp_post_id=%s editoria=%s", wp_post_id, editoria)
+        return self._build_result(result, wp_post_id, editoria)
 
-        elapsed = int((time.time() - start) * 1000)
-        return ImageAttachedEvent(
-            post_id=post_id,
-            article_id=article_id,
-            media_id=media_id if success else selected.get("wp_media_id"),
-            tier_used=tier_used,
-            api_used=selected.get("source_api"),
-            query_used=query_used,
-            clip_score=selected.get("clip_score"),
-            image_url=selected.get("url"),
-            attribution=selected.get("attribution", "Imagem ilustrativa"),
-            ai_generated=bool(selected.get("ai_generated", False)),
-            total_time_ms=elapsed,
-            rounds_attempted=0,
-            timestamp=datetime.utcnow(),
-            fotografo_id=self.instance_id,
-        )
+    def _build_result(self, tier_result: dict, wp_post_id: Any, editoria: str) -> dict[str, Any]:
+        return {
+            "wp_post_id": wp_post_id,
+            "image_url": tier_result.get("url", ""),
+            "source": tier_result.get("source", "unknown"),
+            "tier": tier_result.get("tier", 0),
+            "ai_generated": tier_result.get("ai_generated", False),
+            "ai_label": tier_result.get("ai_label"),
+            "attribution": tier_result.get("attribution"),
+            "alt": tier_result.get("alt", f"Imagem: {editoria}"),
+            "editoria": editoria,
+        }
+
+    async def close(self):
+        await self.tier2.close()
+        await self.tier3.close()

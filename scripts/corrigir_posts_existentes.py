@@ -127,6 +127,7 @@ def create_session():
 
 
 SESSION = create_session()
+DB_CONN = get_db()
 
 
 
@@ -151,30 +152,17 @@ def get_db():
 
 
 def fetch_all_posts():
-
-    conn = get_db()
-
-    cur  = conn.cursor(dictionary=True)
-
-    cur.execute(f"""
-
-        SELECT ID, post_title, post_content, post_excerpt
-
-        FROM {TP}posts
-
-        WHERE post_status='publish' AND post_type='post'
-
-        ORDER BY ID ASC
-
-    """)
-
-    posts = cur.fetchall()
-
-    cur.close(); conn.close()
-
-    logger.info(f"Posts encontrados: {len(posts)}")
-
-    return posts
+    offset = 0
+    limit = 500
+    while True:
+        cur = DB_CONN.cursor(dictionary=True)
+        cur.execute(f"SELECT ID, post_title, post_content, post_excerpt FROM {TP}posts WHERE post_status='publish' AND post_type='post' ORDER BY ID ASC LIMIT {limit} OFFSET {offset}")
+        posts = cur.fetchall()
+        cur.close()
+        if not posts: break
+        for post in posts:
+            yield post
+        offset += limit
 
 
 
@@ -197,14 +185,9 @@ def clean_title(title):
 
 
 def update_title_db(post_id, title):
-
-    conn = get_db()
-
-    cur  = conn.cursor()
-
+    cur = DB_CONN.cursor()
     cur.execute(f"UPDATE {TP}posts SET post_title=%s WHERE ID=%s", (title, post_id))
-
-    conn.commit(); cur.close(); conn.close()
+    DB_CONN.commit(); cur.close()
 
 
 
@@ -245,35 +228,20 @@ def generate_excerpt(title, content):
 
 
 def update_excerpt_db(post_id, excerpt):
-
-    conn = get_db()
-
-    cur  = conn.cursor()
-
+    cur = DB_CONN.cursor()
     cur.execute(f"UPDATE {TP}posts SET post_excerpt=%s WHERE ID=%s", (excerpt, post_id))
-
-    conn.commit(); cur.close(); conn.close()
+    DB_CONN.commit(); cur.close()
 
 
 
 def get_featured_image_id(post_id):
-
-    conn = get_db()
-
-    cur  = conn.cursor()
-
+    cur = DB_CONN.cursor()
     cur.execute(
-
         f"SELECT meta_value FROM {TP}postmeta WHERE post_id=%s AND meta_key='_thumbnail_id'",
-
         (post_id,)
-
     )
-
     row = cur.fetchone()
-
-    cur.close(); conn.close()
-
+    cur.close()
     return int(row[0]) if row and row[0] else None
 
 
@@ -341,111 +309,68 @@ def set_featured_image(post_id, media_id):
 
 
 def get_category_id_by_name(name):
-
-    conn = get_db()
-
-    cur  = conn.cursor()
-
+    cur = DB_CONN.cursor()
     cur.execute(f"""
-
         SELECT t.term_id FROM {TP}terms t
-
         JOIN {TP}term_taxonomy tt ON t.term_id=tt.term_id
-
         WHERE t.name=%s AND tt.taxonomy='category'
-
     """, (name,))
-
     row = cur.fetchone()
-
-    cur.close(); conn.close()
-
+    cur.close()
     return row[0] if row else None
 
 
 
 def get_post_category_ids(post_id):
-
-    conn = get_db()
-
-    cur  = conn.cursor()
-
+    cur = DB_CONN.cursor()
     cur.execute(f"""
-
         SELECT t.term_id FROM {TP}terms t
-
         JOIN {TP}term_taxonomy tt ON t.term_id=tt.term_id
-
         JOIN {TP}term_relationships tr ON tt.term_taxonomy_id=tr.term_taxonomy_id
-
         WHERE tr.object_id=%s AND tt.taxonomy='category'
-
     """, (post_id,))
-
     rows = cur.fetchall()
-
-    cur.close(); conn.close()
-
+    cur.close()
     return [r[0] for r in rows]
 
 
 
 def detect_better_category(title, content):
-
     text   = (title + ' ' + content[:500]).lower()
-
+    text   = re.sub(r'[^a-zA-Z0-9\s]', ' ', text) # pad words explicitly
     scores = {}
-
+    tokens = set(text.split())
     for cat, kws in CATEGORY_MAP.items():
-
-        s = sum(1 for kw in kws if kw in text)
-
+        s = sum(1 for kw in kws if kw in tokens)
         if s > 0:
-
             scores[cat] = s
-
     return max(scores, key=scores.get) if scores else None
 
 
 
 def find_duplicates():
-
-    conn = get_db()
-
-    cur  = conn.cursor(dictionary=True)
-
+    cur = DB_CONN.cursor(dictionary=True)
     cur.execute(f"""
-
         SELECT post_title, COUNT(*) cnt,
-
                GROUP_CONCAT(ID ORDER BY ID ASC) ids
-
         FROM {TP}posts
-
         WHERE post_status='publish' AND post_type='post'
-
         GROUP BY post_title HAVING cnt > 1
-
     """)
-
     dups = cur.fetchall()
-
-    cur.close(); conn.close()
-
+    cur.close()
     return dups
 
 
 
 def trash_post(post_id):
-
+    check = SESSION.get(f"{WP_URL}/wp-json/wp/v2/posts/{post_id}", auth=(WP_USER, WP_APP_PASS))
+    if check.status_code == 200 and check.json().get('status') == 'trash':
+        return False
     r = SESSION.delete(
-
         f"{WP_URL}/wp-json/wp/v2/posts/{post_id}",
-
         auth=(WP_USER, WP_APP_PASS)
-
     )
-
     return r.status_code in [200,201]
 
 
@@ -479,12 +404,8 @@ def main():
 
 
     logger.info("=== FASE 1: Corrigindo posts ===")
-
     posts = fetch_all_posts()
-
-    stats['total'] = len(posts)
-
-
+    stats['total'] = "Desconhecido (Modo Lazy/Gerador)"
 
     for i, post in enumerate(posts):
 
@@ -513,12 +434,9 @@ def main():
 
 
             if needs_excerpt_fix(excerpt):
-
                 update_excerpt_db(pid, generate_excerpt(title, content))
-
                 stats['excerpt'] += 1
-
-                time.sleep(0.3)
+                time.sleep(4.2)  # Gemini is 15 RPM max
 
 
 

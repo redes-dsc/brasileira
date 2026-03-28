@@ -10,16 +10,21 @@ Centraliza credenciais e URLs para fácil manutenção.
 """
 
 import os
+import base64
 from dotenv import load_dotenv
 
 # Carregar o .env
 load_dotenv()
 
-WP_URL = "https://brasileira.news/wp-json/wp/v2"
+_base = os.getenv("WP_URL", "https://brasileira.news").rstrip('/')
+if not _base.endswith("/wp-json/wp/v2"):
+    WP_URL = f"{_base}/wp-json/wp/v2"
+else:
+    WP_URL = _base
 
-WP_USER = "iapublicador"
+WP_USER = os.getenv("WP_USER", "iapublicador")
 
-WP_APP_PASSWORD = os.getenv("WP_APP_PASS", "nWgboohRWZGLv2d7ebQgkf80")
+WP_APP_PASSWORD = os.getenv("WP_APP_PASS")
 
 
 

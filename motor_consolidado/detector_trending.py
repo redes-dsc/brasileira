@@ -53,7 +53,7 @@ def _cluster_tfidf(titles: list[dict]) -> list[list[int]]:
 
     vectorizer = TfidfVectorizer(max_features=5000)
     tfidf_matrix = vectorizer.fit_transform(valid_texts)
-    sim_matrix = cosine_similarity(tfidf_matrix)
+    sim_matrix = (tfidf_matrix * tfidf_matrix.T).tocsr()
 
     # Union-Find para agrupamento
     parent = list(range(len(valid_indices)))
@@ -70,8 +70,9 @@ def _cluster_tfidf(titles: list[dict]) -> list[list[int]]:
             parent[ra] = rb
 
     for i in range(len(valid_indices)):
-        for j in range(i + 1, len(valid_indices)):
-            if sim_matrix[i][j] >= SIMILARITY_THRESHOLD:
+        row = sim_matrix.getrow(i)
+        for j, val in zip(row.indices, row.data):
+            if j > i and val >= SIMILARITY_THRESHOLD:
                 union(i, j)
 
     # Montar clusters

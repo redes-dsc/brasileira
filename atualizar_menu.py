@@ -18,7 +18,7 @@ load_dotenv()
 # Config
 WP_URL = "https://brasileira.news/wp-json/wp/v2"
 WP_USER = "iapublicador"
-WP_APP_PASSWORD = os.getenv("WP_APP_PASS", "nWgboohRWZGLv2d7ebQgkf80")
+WP_APP_PASSWORD = os.getenv("WP_APP_PASS")
 
 AUTH_HEADERS = {
     'Authorization': f'Basic {base64.b64encode(f"{WP_USER}:{WP_APP_PASSWORD}".encode()).decode()}',

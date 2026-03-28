@@ -62,7 +62,7 @@ WP_PATCH_DELAY = 1.0            # segundos entre PATCHes (rate limit)
 # ── Scores e filtros ──────────────────────────────────
 SCORE_MINIMUM = 50
 MIN_WORDS = 200                  # filtro eliminatório
-MIN_WORDS_PENALTY = 300          # abaixo disso: -10
+MIN_WORDS_PENALTY = 200          # abaixo disso: -10
 
 # ── Pesos de scoring (positivos) ──────────────────────
 SCORE_FONTE_OFICIAL = 30
@@ -101,6 +101,8 @@ TAG_IDS = {
     "home-infraestrutura": 14919,
     "home-cultura": 14920,
     "home-sociedade": 14921,
+    "home-esportes": 14925,
+    "home-justica": 14926,
     "home-especial": 14922,
     "home-urgente": 14923,
     "consolidada": 14924,

@@ -1,4 +1,4 @@
-"""Classificador ML com sentence-transformers para 16 macrocategorias."""
+"""Classificador ML com sentence-transformers (embeddings zero-shot) para 16 macrocategorias."""
 
 from __future__ import annotations
 
@@ -6,151 +6,163 @@ import asyncio
 import logging
 import pickle
 from pathlib import Path
-from typing import Optional
-
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-CACHE_PATH = Path("/tmp/category_centroids.pkl")
+CACHE_PATH = Path("/tmp/category_centroids_v3_st.pkl")
 
+# Slugs alinhados a WordPress; frases em PT para embeddings (paraphrase-multilingual).
 CATEGORY_PROTOTYPES: dict[str, list[str]] = {
     "politica": [
-        "governo federal anuncia novas medidas", "deputados aprovam projeto de lei",
-        "presidente assina decreto regulamentando", "eleições municipais disputa acirrada",
-        "senado vota reforma política", "congresso debate orçamento público",
-        "partidos políticos formam aliança", "ministro toma posse no cargo",
-        "câmara dos deputados sessão plenária", "STF julga ação de inconstitucionalidade",
+        "governo federal anuncia medida",
+        "presidente assina decreto",
+        "congresso nacional vota projeto de lei",
+        "senado e câmara dos deputados",
+        "eleições e partidos políticos",
     ],
     "economia": [
-        "bolsa de valores fecha em alta", "inflação acumula alta no semestre",
-        "banco central define taxa selic", "PIB cresce no trimestre",
-        "dólar sobe frente ao real", "mercado financeiro reage a dados",
-        "investimentos estrangeiros aumentam", "desemprego cai segundo pesquisa",
-        "balança comercial registra superávit", "reforma tributária impacta empresas",
+        "banco central define taxa de juros selic",
+        "inflação e índice de preços ao consumidor",
+        "mercado financeiro bolsa de valores",
+        "PIB e crescimento econômico do Brasil",
+        "dólar câmbio e comércio exterior",
     ],
     "esportes": [
-        "campeonato brasileiro rodada decisiva", "seleção brasileira convocação jogadores",
-        "time vence partida por gols", "olimpíadas medalha de ouro",
-        "copa do mundo fase de grupos", "jogador transferência milionária",
-        "técnico demitido após resultados ruins", "campeonato estadual final emocionante",
-        "tênis grand slam semifinal", "fórmula 1 grande prêmio corrida",
+        "campeonato brasileiro série A futebol",
+        "seleção brasileira convocação jogos",
+        "Corinthians Flamengo Palmeiras São Paulo",
+        "olimpíadas e competição esportiva",
+        "transferência de jogador contratação",
     ],
     "tecnologia": [
-        "inteligência artificial avanço significativo", "startup levanta rodada investimento",
-        "aplicativo lança nova funcionalidade", "cibersegurança ataque hacker dados vazados",
-        "rede social mudança algoritmo", "criptomoeda bitcoin valorização mercado",
-        "smartphone lançamento inovação", "computação quântica pesquisa avanço",
-        "internet 5G expansão cobertura", "big data análise empresarial",
+        "inteligência artificial e machine learning",
+        "startup e inovação tecnológica",
+        "smartphone celular e aplicativo",
+        "cibersegurança e proteção de dados",
+        "redes sociais e plataformas digitais",
     ],
     "saude": [
-        "vacina aprovada pela anvisa", "sus amplia atendimento hospitalar",
-        "pandemia novos casos crescem", "pesquisa médica descobre tratamento",
-        "plano de saúde reajuste anual", "surto de dengue epidemia",
-        "saúde mental ansiedade depressão tratamento", "hospital inaugurado nova unidade",
-        "medicamento genérico disponível farmácias", "campanha vacinação crianças idosos",
+        "ministério da saúde vacinação SUS",
+        "epidemia pandemia e doença infecciosa",
+        "hospital e atendimento médico",
+        "medicamento e tratamento de saúde",
+        "saúde mental e bem-estar",
     ],
     "educacao": [
-        "enem resultado divulgação notas", "universidade vestibular aprovação",
-        "escola pública ensino fundamental", "professor greve salário reajuste",
-        "educação a distância crescimento", "bolsa de estudos programa federal",
-        "analfabetismo taxa redução", "currículo escolar reforma base nacional",
-        "creche vaga fila espera", "ensino técnico profissionalizante mercado trabalho",
+        "escola universidade e ensino",
+        "ENEM vestibular e educação superior",
+        "MEC e política educacional",
+        "professor e sala de aula",
+        "pesquisa acadêmica e ciência",
     ],
     "ciencia": [
-        "pesquisa científica publicação revista", "nasa missão espacial lançamento",
-        "descoberta fóssil arqueológica", "mudança climática estudo impacto",
-        "genoma sequenciamento dna", "energia renovável solar eólica",
-        "telescópio observação galáxia", "robótica automação industrial",
-        "biodiversidade espécie descoberta", "física quântica experimento",
+        "descoberta científica e pesquisa",
+        "NASA espaço e astronomia",
+        "mudança climática e meio ambiente",
+        "estudo publicado em revista científica",
+        "tecnologia e inovação científica",
     ],
     "cultura": [
-        "festival de música shows internacionais", "filme estreia bilheteria cinema",
-        "exposição arte museu galeria", "livro lançamento autor best-seller",
-        "teatro peça espetáculo temporada", "carnaval desfile escola samba",
-        "série streaming plataforma lançamento", "prêmio grammy oscar indicação",
-        "patrimônio cultural tombamento restauração", "show musical turnê apresentação",
+        "festival de música e show ao vivo",
+        "cinema filme e série de TV",
+        "livro literatura e autor",
+        "exposição de arte e museu",
+        "cultura popular e entretenimento",
     ],
     "mundo": [
-        "conflito geopolítico tensão internacional", "reunião cúpula líderes mundiais",
-        "acordo comercial entre países", "guerra conflito armado vítimas",
-        "eleição presidencial país estrangeiro", "tratado internacional assinatura",
-        "refugiados migração crise humanitária", "diplomacia relações bilaterais",
-        "organização nações unidas resolução", "economia global recessão crescimento",
+        "guerra conflito e tensão geopolítica",
+        "ONU e diplomacia internacional",
+        "Estados Unidos China e Rússia",
+        "União Europeia e comércio global",
+        "imigrantes refugiados e fronteiras",
     ],
     "meio_ambiente": [
-        "desmatamento amazônia floresta queimadas", "aquecimento global temperatura recorde",
-        "poluição ar qualidade cidade", "reciclagem resíduos sólidos coleta",
-        "energia limpa sustentabilidade transição", "seca crise hídrica reservatórios",
-        "biodiversidade extinção espécie ameaçada", "rio contaminação despejo esgoto",
-        "parque ambiental preservação área protegida", "carbono emissão acordo climático",
+        "desmatamento e Amazônia",
+        "mudança climática e aquecimento global",
+        "poluição e contaminação ambiental",
+        "energia renovável e sustentabilidade",
+        "fauna flora e biodiversidade",
     ],
     "seguranca": [
-        "polícia operação prisão traficantes", "crime organizado facção investigação",
-        "homicídio violência urbana estatística", "justiça julgamento condenação réu",
-        "presídio sistema penitenciário superlotação", "assalto roubo furto ocorrência",
-        "lei penal código reforma legislação", "ministério público denúncia promotor",
-        "delegacia registro boletim ocorrência", "feminicídio violência doméstica proteção",
+        "polícia operação e crime organizado",
+        "violência e segurança pública",
+        "tráfico de drogas e prisão",
+        "homicídio e investigação policial",
+        "sistema penitenciário e justiça criminal",
     ],
     "sociedade": [
-        "desigualdade social pobreza renda", "direitos humanos igualdade inclusão",
-        "movimento social protesto manifestação", "comunidade quilombola indígena reconhecimento",
-        "habitação moradia programa social", "transporte público mobilidade urbana",
-        "terceiro setor ong assistência social", "religião igreja culto comunidade",
-        "família adoção custódia direitos", "urbanização cidade crescimento populacional",
+        "desigualdade social e pobreza",
+        "direitos humanos e inclusão social",
+        "moradia e habitação popular",
+        "transporte público e mobilidade urbana",
+        "comunidade e ação social",
     ],
     "brasil": [
-        "brasil território nacional estados", "federação governo estados municípios",
-        "brasileiro população censo demográfico", "nação país pátria identidade",
-        "infraestrutura obras desenvolvimento nacional", "regiões norte sul sudeste nordeste",
-        "cultura brasileira tradição identidade", "economia brasileira produção industrial",
-        "política nacional debate público", "sociedade brasileira costume tradição",
+        "notícia geral do Brasil",
+        "estados e municípios brasileiros",
+        "cultura brasileira e identidade nacional",
+        "infraestrutura e desenvolvimento regional",
+        "serviço público e cidadania",
     ],
     "regionais": [
-        "estado governo estadual decreto", "cidade prefeitura administração municipal",
-        "região metropolitana desenvolvimento local", "interior rural agricultura",
-        "capital estado inauguração obra", "comunidade local bairro vizinhança",
-        "prefeito eleição câmara vereadores", "escola municipal estadual matrícula",
-        "hospital regional atendimento saúde", "estrada rodovia duplicação manutenção",
+        "notícia local e regional",
+        "prefeitura e governo estadual",
+        "cidade e comunidade local",
+        "desenvolvimento regional",
+        "evento e acontecimento local",
     ],
     "opiniao": [
-        "análise editorial opinião colunista", "artigo debate perspectiva ponto de vista",
-        "coluna comentário reflexão crítica", "entrevista especialista avaliação cenário",
-        "editorial posicionamento jornal", "crônica texto autoral observação",
-        "carta leitor público opinião", "debate acadêmico pesquisador especialista",
-        "perspectiva futuro tendência previsão", "crítica review avaliação produto serviço",
+        "coluna de opinião e editorial",
+        "análise política e comentário",
+        "crítica e ponto de vista",
+        "debate e argumentação",
+        "crônica e ensaio",
     ],
     "ultimas_noticias": [
-        "urgente última hora breaking news", "agora pouco acaba de acontecer",
-        "atualização momento notícia urgente", "alerta flash informação imediata",
-        "cobertura ao vivo tempo real", "plantão notícias atualização minuto",
+        "urgente e breaking news",
+        "última hora e plantão",
+        "acidente e tragédia",
+        "evento inesperado e emergência",
+        "alerta e aviso importante",
     ],
 }
 
 # IDs de categorias WordPress
 CATEGORY_TO_WP_ID: dict[str, int] = {
-    "politica": 3, "economia": 4, "esportes": 5, "tecnologia": 6,
-    "saude": 7, "educacao": 8, "ciencia": 9, "cultura": 10,
-    "mundo": 11, "meio_ambiente": 12, "seguranca": 13, "sociedade": 15,
-    "brasil": 14, "regionais": 16, "opiniao": 18, "ultimas_noticias": 1,
+    "politica": 3,
+    "economia": 4,
+    "esportes": 5,
+    "tecnologia": 6,
+    "saude": 7,
+    "educacao": 8,
+    "ciencia": 9,
+    "cultura": 10,
+    "mundo": 11,
+    "meio_ambiente": 12,
+    "seguranca": 13,
+    "sociedade": 15,
+    "brasil": 14,
+    "regionais": 16,
+    "opiniao": 18,
+    "ultimas_noticias": 1,
 }
 
 
 class MLClassifier:
-    """Classificador baseado em sentence-transformers com cosine similarity."""
+    """Classificador por similaridade de cosseno entre embedding do texto e centróides por categoria."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._model = None
         self._centroids: dict[str, np.ndarray] = {}
         self._ready = False
 
     async def initialize(self) -> None:
-        """Carrega modelo e computa centroids (ou lê do cache)."""
+        """Carrega modelo e computa centróides (ou lê do cache)."""
         if self._ready:
             return
 
-        # Tenta cache primeiro
         if CACHE_PATH.exists():
             try:
                 with open(CACHE_PATH, "rb") as f:
@@ -161,23 +173,20 @@ class MLClassifier:
             except Exception:
                 logger.warning("Cache de centroids corrompido, recomputando")
 
-        # Carrega modelo em thread separada (blocking)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._load_model_and_centroids)
         self._ready = True
 
     def _load_model_and_centroids(self) -> None:
-        """Carrega sentence-transformers e computa centroids (blocking)."""
         from sentence_transformers import SentenceTransformer
 
         logger.info("Carregando modelo %s...", MODEL_NAME)
         self._model = SentenceTransformer(MODEL_NAME)
 
         for category, phrases in CATEGORY_PROTOTYPES.items():
-            embeddings = self._model.encode(phrases, normalize_embeddings=True)
+            embeddings = self._model.encode(phrases)
             self._centroids[category] = np.mean(embeddings, axis=0)
 
-        # Salva cache
         try:
             with open(CACHE_PATH, "wb") as f:
                 pickle.dump(self._centroids, f)
@@ -185,37 +194,67 @@ class MLClassifier:
         except Exception:
             logger.warning("Falha ao salvar cache de centroids")
 
-    async def classify(self, text: str) -> tuple[str, float]:
-        """Classifica texto retornando (categoria, confiança)."""
+    async def classify(
+        self,
+        title: str = "",
+        body: str = "",
+        *,
+        titulo: str | None = None,
+        conteudo: str | None = None,
+        fonte_categoria_hint: str | None = None,
+    ) -> tuple[str, float]:
+        """Classifica texto retornando (categoria_slug, confiança como similaridade de cosseno)."""
         if not self._ready:
             await self.initialize()
 
+        t = titulo if titulo is not None else title
+        b = conteudo if conteudo is not None else body
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._classify_sync, text)
+        return await loop.run_in_executor(
+            None,
+            self._classify_sync,
+            t,
+            b,
+            fonte_categoria_hint,
+        )
 
-    def _classify_sync(self, text: str) -> tuple[str, float]:
-        """Classificação síncrona (roda em executor)."""
+    def _classify_sync(
+        self,
+        title: str,
+        body: str = "",
+        fonte_categoria_hint: str | None = None,
+    ) -> tuple[str, float]:
         if self._model is None:
-            # Fallback: carregar modelo se só temos centroids do cache
             from sentence_transformers import SentenceTransformer
+
             self._model = SentenceTransformer(MODEL_NAME)
 
-        text_embedding = self._model.encode([text[:512]], normalize_embeddings=True)[0]
+        text = f"{title}. {body[:500]}" if body else title
+        embedding = self._model.encode(text)
 
-        scores: dict[str, float] = {}
-        for category, centroid in self._centroids.items():
-            similarity = float(np.dot(text_embedding, centroid))
-            scores[category] = similarity
+        best_cat = "brasil"
+        best_score = 0.0
 
-        best_cat = max(scores, key=scores.get)
-        best_score = scores[best_cat]
+        for cat, centroid in self._centroids.items():
+            denom = np.linalg.norm(embedding) * np.linalg.norm(centroid)
+            if denom == 0:
+                continue
+            similarity = float(np.dot(embedding, centroid) / denom)
+            if similarity > best_score:
+                best_score = similarity
+                best_cat = cat
 
-        # Segundo melhor para calcular margem de confiança
-        sorted_scores = sorted(scores.values(), reverse=True)
-        margin = sorted_scores[0] - sorted_scores[1] if len(sorted_scores) > 1 else 0
-        confidence = min(0.98, max(0.1, best_score * 0.7 + margin * 1.5))
+        if fonte_categoria_hint:
+            hint = fonte_categoria_hint.strip().lower().replace(" ", "_").replace("-", "_")
+            if hint == best_cat:
+                best_score = min(1.0, best_score + 0.05)
 
-        return best_cat, confidence
+        return best_cat, best_score
+
+    @property
+    def category_centroids(self) -> dict[str, np.ndarray]:
+        """Centróides por categoria (útil para testes/diagnóstico)."""
+        return self._centroids
 
     def get_wp_category_id(self, category: str) -> int:
         """Retorna WP category ID para a categoria."""

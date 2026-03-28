@@ -15,7 +15,7 @@ from shared.redis_client import create_redis_client
 from smart_router.router import SmartLLMRouter
 
 from .classifier import MLClassifier
-from .ner_extractor import NERExtractor, filter_entities
+from .ner_extractor import NERExtractor
 from .relevance_scorer import RelevanceScorer
 from .pipeline import ClassificationPipeline
 

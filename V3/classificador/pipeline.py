@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from typing import Any, Optional
 
 from shared.schemas import LLMRequest
@@ -35,8 +36,8 @@ class ClassificationPipeline:
             resumo = payload.get("resumo", "")
             text = f"{titulo}. {resumo}"
 
-            # ML classification
-            editoria, confidence = await self.classifier.classify(text)
+            # ML classification (título + corpo/resumo alinhados ao embedding)
+            editoria, confidence = await self.classifier.classify(titulo, resumo)
 
             # LLM fallback se confiança baixa
             if confidence < LLM_FALLBACK_THRESHOLD and self.router is not None:
@@ -50,13 +51,17 @@ class ClassificationPipeline:
             from .ner_extractor import filter_entities
             entities = filter_entities(entities)
 
-            # Scoring
+            # Scoring (RelevanceScorer espera dict com pessoas / organizacoes / locais)
             score_result = self.scorer.score(
                 titulo=titulo,
                 resumo=resumo,
                 fonte_tier=payload.get("fonte_tier", payload.get("tier", "padrao")),
                 data_pub=payload.get("data_publicacao"),
-                entities=entities,
+                entities={
+                    "pessoas": entities.pessoas,
+                    "organizacoes": entities.organizacoes,
+                    "locais": entities.locais,
+                },
             )
 
             wp_id = CATEGORY_TO_WP_ID.get(editoria, 1)
@@ -67,7 +72,7 @@ class ClassificationPipeline:
                 "categoria_wp_id": wp_id,
                 "relevancia_score": score_result["score"],
                 "urgencia": score_result["urgencia"],
-                "entidades": entities,
+                "entidades": asdict(entities),
                 "confianca_classificacao": confidence,
             }
         except Exception:

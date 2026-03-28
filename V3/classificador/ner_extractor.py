@@ -1,15 +1,15 @@
-"""Extração de Entidades Nomeadas (NER) com spaCy + fallback regex."""
+"""Extração de Entidades Nomeadas com spaCy."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import re
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _nlp = None
-_NER_MODE = "regex"  # "spacy" or "regex"
 
 STOP_ENTITIES = frozenset({
     "Foto", "Imagem", "Reprodução", "Agência", "Reuters", "AFP",
@@ -17,100 +17,197 @@ STOP_ENTITIES = frozenset({
 })
 
 
-async def initialize_ner() -> str:
-    """Tenta carregar spaCy, retorna modo usado."""
-    global _nlp, _NER_MODE
-    try:
+def _get_nlp():
+    global _nlp
+    if _nlp is None:
         import spacy
-        _nlp = spacy.load("pt_core_news_lg")
-        _NER_MODE = "spacy"
-        logger.info("NER: spaCy pt_core_news_lg carregado")
-    except (ImportError, OSError):
         try:
-            import spacy
-            _nlp = spacy.load("pt_core_news_sm")
-            _NER_MODE = "spacy"
-            logger.info("NER: spaCy pt_core_news_sm carregado (fallback)")
-        except (ImportError, OSError):
-            _NER_MODE = "regex"
-            logger.warning("NER: spaCy indisponível, usando regex fallback")
-    return _NER_MODE
+            _nlp = spacy.load("pt_core_news_lg")
+        except OSError:
+            logger.warning("pt_core_news_lg não encontrado, usando pt_core_news_sm")
+            try:
+                _nlp = spacy.load("pt_core_news_sm")
+            except OSError:
+                logger.error("Nenhum modelo spaCy pt instalado")
+                return None
+    return _nlp
+
+
+def extract_entities(text: str) -> dict[str, list[str]]:
+    """Extrai entidades nomeadas do texto.
+
+    Retorna dict com chaves PER, ORG, LOC, MISC.
+    Cada valor é uma lista de entidades únicas.
+    """
+    nlp = _get_nlp()
+    if nlp is None:
+        return {"PER": [], "ORG": [], "LOC": [], "MISC": []}
+
+    # Limitar texto para performance
+    doc = nlp(text[:5000])
+
+    entities: dict[str, set[str]] = {
+        "PER": set(),
+        "ORG": set(),
+        "LOC": set(),
+        "MISC": set(),
+    }
+
+    for ent in doc.ents:
+        label = ent.label_
+        name = ent.text.strip()
+
+        if len(name) < 2 or name in STOP_ENTITIES:
+            continue
+
+        if label == "PER":
+            entities["PER"].add(name)
+        elif label == "ORG":
+            entities["ORG"].add(name)
+        elif label in ("LOC", "GPE"):
+            entities["LOC"].add(name)
+        else:
+            entities["MISC"].add(name)
+
+    return {k: sorted(v) for k, v in entities.items()}
+
+
+@dataclass
+class NERResult:
+    """Resultado de NER para o pipeline e consumidores (formato legado em português)."""
+
+    pessoas: list[str]
+    organizacoes: list[str]
+    locais: list[str]
+    misc: list[str]
+    entidade_principal: Optional[str]
+    tags_wordpress: list[str]
+
+
+def _raw_to_ner_result(raw: dict[str, list[str]]) -> NERResult:
+    pessoas = list(raw["PER"])
+    organizacoes = list(raw["ORG"])
+    locais = list(raw["LOC"])
+    misc = list(raw["MISC"])
+
+    entidade_principal: Optional[str] = None
+    if pessoas:
+        entidade_principal = pessoas[0]
+    elif organizacoes:
+        entidade_principal = organizacoes[0]
+    elif locais:
+        entidade_principal = locais[0]
+
+    tags: list[str] = []
+    for pool in (pessoas, organizacoes, locais):
+        for x in pool:
+            if len(tags) >= 5:
+                break
+            if x not in tags:
+                tags.append(x)
+        if len(tags) >= 5:
+            break
+
+    return NERResult(
+        pessoas=pessoas,
+        organizacoes=organizacoes,
+        locais=locais,
+        misc=misc,
+        entidade_principal=entidade_principal,
+        tags_wordpress=tags[:5],
+    )
+
+
+def filter_entities(entities: NERResult, max_per_type: int = 10) -> NERResult:
+    """Filtra stoplist, limita por tipo e remove falsos positivos comuns em ORG."""
+
+    def trim(lst: list[str]) -> list[str]:
+        out: list[str] = []
+        for x in lst:
+            if len(out) >= max_per_type:
+                break
+            if x in STOP_ENTITIES:
+                continue
+            out.append(x)
+        return out
+
+    pessoas = trim(entities.pessoas)
+    locais = trim(entities.locais)
+    misc = trim(entities.misc)
+    organizacoes: list[str] = []
+    for o in trim(entities.organizacoes):
+        if o == "Governo":
+            continue
+        if o in STOP_ENTITIES:
+            continue
+        organizacoes.append(o)
+
+    entidade_principal = entities.entidade_principal
+    if entidade_principal == "Governo":
+        entidade_principal = None
+        if pessoas:
+            entidade_principal = pessoas[0]
+        elif organizacoes:
+            entidade_principal = organizacoes[0]
+        elif locais:
+            entidade_principal = locais[0]
+
+    # Recalcular tags_wordpress a partir das listas filtradas
+    tags: list[str] = []
+    for pool in (pessoas, organizacoes, locais):
+        for x in pool:
+            if len(tags) >= 5:
+                break
+            if x not in tags:
+                tags.append(x)
+        if len(tags) >= 5:
+            break
+
+    return NERResult(
+        pessoas=pessoas,
+        organizacoes=organizacoes,
+        locais=locais,
+        misc=misc,
+        entidade_principal=entidade_principal,
+        tags_wordpress=tags[:5],
+    )
 
 
 class NERExtractor:
-    """Extrai entidades nomeadas do texto."""
+    """Extrai entidades nomeadas do texto (spaCy), com interface async para o pipeline."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._initialized = False
 
     async def initialize(self) -> None:
         if self._initialized:
             return
-        await initialize_ner()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _get_nlp)
         self._initialized = True
 
-    async def extract(self, text: str) -> dict[str, list[str]]:
-        """Extrai entidades: pessoas, organizações, locais."""
+    async def extract(
+        self,
+        text: str = "",
+        *,
+        titulo: str = "",
+        conteudo: str = "",
+    ) -> NERResult:
+        """Extrai entidades. Aceita `text` ou `titulo`/`conteudo` (como nos testes)."""
         if not self._initialized:
             await self.initialize()
+        if titulo or conteudo:
+            text = f"{titulo}. {conteudo}".strip()
+        if not text:
+            return NERResult(
+                pessoas=[],
+                organizacoes=[],
+                locais=[],
+                misc=[],
+                entidade_principal=None,
+                tags_wordpress=[],
+            )
 
-        if _NER_MODE == "spacy" and _nlp is not None:
-            return self._extract_spacy(text)
-        return self._extract_regex(text)
-
-    def _extract_spacy(self, text: str) -> dict[str, list[str]]:
-        """Extração via spaCy NER."""
-        doc = _nlp(text[:5000])
-        entities: dict[str, list[str]] = {"pessoas": [], "organizacoes": [], "locais": []}
-
-        for ent in doc.ents:
-            name = ent.text.strip()
-            if name in STOP_ENTITIES or len(name) < 2:
-                continue
-            if ent.label_ == "PER":
-                if name not in entities["pessoas"]:
-                    entities["pessoas"].append(name)
-            elif ent.label_ == "ORG":
-                if name not in entities["organizacoes"]:
-                    entities["organizacoes"].append(name)
-            elif ent.label_ in ("LOC", "GPE"):
-                if name not in entities["locais"]:
-                    entities["locais"].append(name)
-
-        return entities
-
-    def _extract_regex(self, text: str) -> dict[str, list[str]]:
-        """Fallback regex para NER."""
-        entities: dict[str, list[str]] = {"pessoas": [], "organizacoes": [], "locais": []}
-
-        # Organizações comuns brasileiras
-        org_patterns = [
-            r"\b(STF|STJ|TSE|TST|TCU|CGU|MPF|PF|PRF)\b",
-            r"\b(Petrobras|Itaú|Bradesco|Banco do Brasil|Caixa|BNDES|Vale|Embraer)\b",
-            r"\b(Ibama|Anvisa|ANP|Anatel|Aneel|INSS|INPE|Fiocruz|Embrapa)\b",
-            r"\b(ONU|OMS|FMI|Banco Mundial|Otan|Mercosul|Brics)\b",
-            r"\b(PT|PSDB|MDB|PL|PP|PDT|PSB|PSOL|Podemos|União Brasil)\b",
-        ]
-        for pattern in org_patterns:
-            for match in re.finditer(pattern, text):
-                name = match.group()
-                if name not in entities["organizacoes"]:
-                    entities["organizacoes"].append(name)
-
-        # Locais brasileiros comuns
-        loc_patterns = [
-            r"\b(São Paulo|Rio de Janeiro|Brasília|Belo Horizonte|Salvador|Curitiba|Fortaleza|Recife|Porto Alegre|Manaus|Belém|Goiânia)\b",
-            r"\b(Brasil|Estados Unidos|China|Argentina|Rússia|Ucrânia|Israel|Palestina|Irã|Índia)\b",
-        ]
-        for pattern in loc_patterns:
-            for match in re.finditer(pattern, text):
-                name = match.group()
-                if name not in entities["locais"]:
-                    entities["locais"].append(name)
-
-        return entities
-
-
-def filter_entities(entities: dict[str, list[str]], max_per_type: int = 10) -> dict[str, list[str]]:
-    """Filtra e limita entidades."""
-    return {k: v[:max_per_type] for k, v in entities.items()}
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(None, extract_entities, text)
+        return _raw_to_ner_result(raw)

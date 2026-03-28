@@ -3,43 +3,75 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Placeholders por editoria (devem ser URLs de imagens reais no WP)
-PLACEHOLDERS: dict[str, dict[str, Any]] = {
-    "politica": {"url": "/wp-content/uploads/placeholders/politica.jpg", "alt": "Imagem ilustrativa: Política"},
-    "economia": {"url": "/wp-content/uploads/placeholders/economia.jpg", "alt": "Imagem ilustrativa: Economia"},
-    "esportes": {"url": "/wp-content/uploads/placeholders/esportes.jpg", "alt": "Imagem ilustrativa: Esportes"},
-    "tecnologia": {"url": "/wp-content/uploads/placeholders/tecnologia.jpg", "alt": "Imagem ilustrativa: Tecnologia"},
-    "saude": {"url": "/wp-content/uploads/placeholders/saude.jpg", "alt": "Imagem ilustrativa: Saúde"},
-    "educacao": {"url": "/wp-content/uploads/placeholders/educacao.jpg", "alt": "Imagem ilustrativa: Educação"},
-    "ciencia": {"url": "/wp-content/uploads/placeholders/ciencia.jpg", "alt": "Imagem ilustrativa: Ciência"},
-    "cultura": {"url": "/wp-content/uploads/placeholders/cultura.jpg", "alt": "Imagem ilustrativa: Cultura"},
-    "mundo": {"url": "/wp-content/uploads/placeholders/mundo.jpg", "alt": "Imagem ilustrativa: Internacional"},
-    "meio_ambiente": {"url": "/wp-content/uploads/placeholders/meio_ambiente.jpg", "alt": "Imagem ilustrativa: Meio Ambiente"},
-    "seguranca": {"url": "/wp-content/uploads/placeholders/seguranca.jpg", "alt": "Imagem ilustrativa: Segurança"},
-    "sociedade": {"url": "/wp-content/uploads/placeholders/sociedade.jpg", "alt": "Imagem ilustrativa: Sociedade"},
-    "brasil": {"url": "/wp-content/uploads/placeholders/brasil.jpg", "alt": "Imagem ilustrativa: Brasil"},
-    "regionais": {"url": "/wp-content/uploads/placeholders/regionais.jpg", "alt": "Imagem ilustrativa: Regionais"},
-    "opiniao": {"url": "/wp-content/uploads/placeholders/opiniao.jpg", "alt": "Imagem ilustrativa: Opinião"},
-    "ultimas_noticias": {"url": "/wp-content/uploads/placeholders/ultimas.jpg", "alt": "Imagem ilustrativa: Últimas Notícias"},
-}
+# URL real confirmada no WordPress
+DEFAULT_PLACEHOLDER_URL = "https://brasileira.news/wp-content/uploads/sites/7/2026/02/imagem-brasileira.png"
 
-DEFAULT_PLACEHOLDER = {"url": "/wp-content/uploads/placeholders/default.jpg", "alt": "Imagem ilustrativa: brasileira.news"}
+# Queries para tentar buscar na media library do WP antes de usar default
+CATEGORY_SEARCH_TERMS: dict[str, str] = {
+    "politica": "brasília congresso",
+    "economia": "economia mercado",
+    "esportes": "esporte futebol",
+    "tecnologia": "tecnologia digital",
+    "saude": "saúde hospital",
+    "educacao": "educação escola",
+    "ciencia": "ciência pesquisa",
+    "cultura": "cultura arte",
+    "mundo": "internacional mundo",
+    "meio_ambiente": "meio ambiente natureza",
+    "seguranca": "segurança polícia",
+    "sociedade": "sociedade comunidade",
+    "brasil": "brasil",
+    "regionais": "cidade regional",
+    "opiniao": "opinião editorial",
+    "ultimas_noticias": "urgente notícia",
+}
 
 
 class Tier4Placeholder:
-    """Retorna placeholder temático. SEMPRE sucede (Regra #3)."""
+    """Retorna placeholder temático. SEMPRE sucede (Regra #3: nenhuma notícia sem imagem)."""
+
+    def __init__(self, wp_client=None):
+        self.wp_client = wp_client
+
+    async def search_wp_media(self, editoria: str) -> Optional[dict[str, Any]]:
+        """Tenta encontrar imagem existente na media library do WordPress."""
+        if not self.wp_client:
+            return None
+        search_term = CATEGORY_SEARCH_TERMS.get(editoria, "brasileira")
+        try:
+            media = await self.wp_client.get(
+                "/wp-json/wp/v2/media",
+                params={"search": search_term, "per_page": 1, "media_type": "image"}
+            )
+            if isinstance(media, list) and media:
+                return {
+                    "success": True,
+                    "url": media[0].get("source_url", DEFAULT_PLACEHOLDER_URL),
+                    "media_id": media[0]["id"],
+                    "alt": media[0].get("alt_text", f"Imagem ilustrativa: {editoria}"),
+                    "source": "wordpress_media",
+                    "tier": 4,
+                    "is_placeholder": True,
+                }
+        except Exception as e:
+            logger.debug("WP media search falhou para '%s': %s", search_term, e)
+        return None
 
     def get_placeholder(self, editoria: str) -> dict[str, Any]:
-        """Retorna placeholder para a editoria. Garantia de 100% de sucesso."""
-        placeholder = PLACEHOLDERS.get(editoria, DEFAULT_PLACEHOLDER)
+        """Retorna placeholder para a editoria. Garantia de 100% de sucesso.
+        
+        Método síncrono para compatibilidade com fotografo.py.
+        Usa URL genérica confirmada como existente no WordPress.
+        """
         return {
             "success": True,
-            "url": placeholder["url"],
-            "alt": placeholder["alt"],
+            "url": DEFAULT_PLACEHOLDER_URL,
+            "alt": f"Imagem ilustrativa - {editoria.replace('_', ' ').title()}",
             "source": "placeholder",
             "tier": 4,
+            "is_placeholder": True,
         }

@@ -18,7 +18,7 @@ from smart_router.router import SmartLLMRouter
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("curador_homepage")
 
-CYCLE_INTERVAL_SECONDS = 900  # 15 minutos entre ciclos normais
+CYCLE_INTERVAL_SECONDS = 360  # 6 minutos entre ciclos normais
 
 
 async def _periodic(agent: CuradorHomepageAgent, shutdown: asyncio.Event) -> None:

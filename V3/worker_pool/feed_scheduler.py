@@ -14,6 +14,15 @@ TOPIC_ASSIGNMENTS = "fonte-assignments"
 DEFAULT_CYCLE_INTERVAL = 1800
 
 
+def _as_utc_aware(dt: datetime | None) -> datetime | None:
+    """Garante datetime com tz UTC (asyncpg TIMESTAMP sem TZ vem naive)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class FeedScheduler:
     """Distribui fontes para workers de forma resiliente."""
 
@@ -69,9 +78,10 @@ class FeedScheduler:
             backoff_factor = min(2 ** health.consecutive_failures, 12)
             interval = min(interval * backoff_factor, 360)
 
-        elapsed_minutes = (
-            datetime.now(timezone.utc) - source["ultimo_sucesso"]
-        ).total_seconds() / 60
+        last_ok = _as_utc_aware(source["ultimo_sucesso"])
+        if last_ok is None:
+            return True
+        elapsed_minutes = (datetime.now(timezone.utc) - last_ok).total_seconds() / 60
         return elapsed_minutes >= interval
 
     async def schedule_cycle(self) -> None:

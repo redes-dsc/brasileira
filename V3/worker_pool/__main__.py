@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 
 from shared.config import load_config
 from shared.db import close_pg_pool, create_pg_pool
@@ -33,15 +34,33 @@ async def main() -> None:
         cycle_interval=cfg.ingestion_cycle_interval,
     )
 
+    shutdown = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def _request_shutdown() -> None:
+        shutdown.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _request_shutdown)
+        except NotImplementedError:
+            # Windows / ambientes sem add_signal_handler
+            pass
+
     await worker_pool.start()
     scheduler_task = asyncio.create_task(scheduler.run_forever(), name="feed-scheduler")
     logger.info("Worker Pool iniciado com %d workers", cfg.ingestion_num_workers)
     try:
-        await scheduler_task
+        await shutdown.wait()
     finally:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.remove_signal_handler(sig)
+            except (NotImplementedError, ValueError, RuntimeError):
+                pass
+        await scheduler.stop()
         scheduler_task.cancel()
         await asyncio.gather(scheduler_task, return_exceptions=True)
-        await scheduler.stop()
         await worker_pool.stop()
         await close_pg_pool(pg_pool)
         await redis.close()

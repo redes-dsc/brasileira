@@ -12,6 +12,7 @@ from curador_homepage.acf_applicator import ACFAplicator
 from curador_homepage.compositor import HomepageCompositor
 from curador_homepage.layout_manager import LayoutManager
 from curador_homepage.scorer import editorial_score, objective_score
+from curador_homepage.wp_fallback_applicator import WPFallbackApplicator
 from shared.kafka_client import KafkaClient
 from shared.memory import MemoryManager
 
@@ -42,7 +43,8 @@ class CuradorHomepageAgent:
         self.memory = memory or MemoryManager(redis_client=redis_client, db_pool=db_pool)
         self.layout_manager = LayoutManager()
         self.compositor = HomepageCompositor()
-        self.aplicator = ACFAplicator()
+        self._fallback_applicator = WPFallbackApplicator()
+        self.aplicator = ACFAplicator(fallback=self._fallback_applicator)
 
     async def coletar_candidatos(self, per_page: int = 50) -> list[dict[str, Any]]:
         """Coleta artigos recentes publicados no WordPress."""
@@ -111,17 +113,25 @@ class CuradorHomepageAgent:
                 "ciclo_id": ciclo_id,
                 "timestamp": timestamp,
             }
+            if apply_result.get("fallback_used"):
+                event["fallback_used"] = True
+                logger.info("Ciclo usou fallback WP nativo (ACF indisponível)")
+
             if self.kafka is not None:
                 await self.kafka.send(TOPIC_HOMEPAGE_UPDATES, event, key=ciclo_id)
 
+            episodic_record = {
+                "ciclo_id": ciclo_id,
+                "layout": decision.layout,
+                "candidatos": len(candidatos),
+                "changed_fields": apply_result.get("changed_fields", []),
+            }
+            if apply_result.get("fallback_used"):
+                episodic_record["fallback_used"] = True
+
             await self.memory.add_episodic(
                 "curador_homepage",
-                {
-                    "ciclo_id": ciclo_id,
-                    "layout": decision.layout,
-                    "candidatos": len(candidatos),
-                    "changed_fields": apply_result.get("changed_fields", []),
-                },
+                episodic_record,
             )
             if self.redis is not None:
                 await self.memory.set_working(

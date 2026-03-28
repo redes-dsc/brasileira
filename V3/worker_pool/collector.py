@@ -64,22 +64,32 @@ class SourceHealthTracker:
         record.last_failure = datetime.now(timezone.utc)
         record.last_error_type = error_type
 
+    async def persist_fonte_to_postgres(self, fonte_id: int) -> None:
+        """Persiste health de uma fonte. ultimo_erro no schema é TIMESTAMP (instante do erro)."""
+        if self.db_pool is None:
+            return
+        record = self._local_cache.get(fonte_id)
+        if record is None:
+            return
+        ultimo_erro_ts = record.last_failure if record.consecutive_failures > 0 else None
+        async with self.db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE fontes SET
+                    ultimo_sucesso = COALESCE($2, ultimo_sucesso),
+                    ultimo_erro = $3
+                WHERE id = $1
+                """,
+                fonte_id,
+                record.last_success,
+                ultimo_erro_ts,
+            )
+
     async def persist_to_postgres(self) -> None:
         if self.db_pool is None:
             return
-        async with self.db_pool.acquire() as conn:
-            for fonte_id, record in self._local_cache.items():
-                await conn.execute(
-                    """
-                    UPDATE fontes SET
-                        ultimo_sucesso = COALESCE($2, ultimo_sucesso),
-                        ultimo_erro = $3
-                    WHERE id = $1
-                    """,
-                    fonte_id,
-                    record.last_success,
-                    record.last_error_type,
-                )
+        for fonte_id in list(self._local_cache.keys()):
+            await self.persist_fonte_to_postgres(fonte_id)
 
     async def persist_to_redis(self) -> None:
         if self.redis is None:
@@ -343,13 +353,16 @@ class WorkerPool:
                         new_articles,
                         len(articles) - new_articles,
                     )
+                    await self.health_tracker.persist_fonte_to_postgres(fonte_id)
                 except asyncio.TimeoutError:
                     self._stats["sources_failed"] += 1
                     self.health_tracker.record_failure(fonte_id, "timeout")
+                    await self.health_tracker.persist_fonte_to_postgres(fonte_id)
                 except Exception as exc:
                     self._stats["sources_failed"] += 1
                     self.health_tracker.record_failure(fonte_id, type(exc).__name__)
                     logger.exception("[%s] erro em fonte=%s", worker_id, fonte_nome)
+                    await self.health_tracker.persist_fonte_to_postgres(fonte_id)
         except asyncio.CancelledError:
             logger.info("[%s] cancelado", worker_id)
         finally:
@@ -358,11 +371,20 @@ class WorkerPool:
     async def _process_source(self, worker_id: str, assignment: dict) -> list[dict]:
         fonte_tipo = assignment.get("tipo", "rss")
         if fonte_tipo == "rss":
+            cfg = assignment.get("config_scraper")
+            if isinstance(cfg, str):
+                try:
+                    parsed = json.loads(cfg) if cfg.strip() else {}
+                except json.JSONDecodeError:
+                    parsed = {}
+                cfg = parsed if isinstance(parsed, dict) else {}
+            elif not isinstance(cfg, dict):
+                cfg = {}
             coro = self.rss_fetcher.collect(
                 feed_url=assignment["url"],
                 fonte_id=assignment["fonte_id"],
                 fonte_nome=assignment.get("nome", ""),
-                grupo=(assignment.get("config_scraper") or {}).get("grupo", ""),
+                grupo=cfg.get("grupo", "") or "geral",
             )
             return await asyncio.wait_for(coro, timeout=15)
         if fonte_tipo == "scraper":

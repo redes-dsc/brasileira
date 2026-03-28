@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from shared.schemas import LLMRequest
+
+logger = logging.getLogger(__name__)
 
 
 class Rewriter:
@@ -33,4 +36,8 @@ class Rewriter:
             response_format={"type": "json_object"},
         )
         response = await router.route_request(request)
-        return json.loads(response.content)
+        try:
+            return json.loads(response.content)
+        except json.JSONDecodeError as e:
+            logger.error("rewriter: LLM retornou JSON inválido: %s — resposta: %.300s", e, response.content)
+            raise ValueError(f"LLM retornou JSON inválido na reescrita: {e}") from e

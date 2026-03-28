@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional
-from urllib.parse import urlparse
-
 import feedparser
 import httpx
 
@@ -64,6 +63,22 @@ class RSSFetcher:
             await self.redis.set(f"source:last_modified:{fonte_id}", last_modified, ex=86400)
 
     @staticmethod
+    def _entry_link(entry: dict) -> str:
+        link = (entry.get("link") or "").strip()
+        if link:
+            return link
+        for item in entry.get("links") or []:
+            if not isinstance(item, dict):
+                continue
+            href = (item.get("href") or "").strip()
+            if not href:
+                continue
+            rel = (item.get("rel") or "alternate").lower()
+            if rel in ("alternate", "self", ""):
+                return href
+        return ""
+
+    @staticmethod
     def _parse_published(entry: dict) -> Optional[datetime]:
         candidates = [entry.get("published"), entry.get("updated")]
         for value in candidates:
@@ -73,6 +88,15 @@ class RSSFetcher:
                 dt = parsedate_to_datetime(value)
                 return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
             except Exception:
+                continue
+        for key in ("published_parsed", "updated_parsed"):
+            struct = entry.get(key)
+            if struct is None:
+                continue
+            try:
+                ts = calendar.timegm(struct)
+                return datetime.fromtimestamp(ts, tz=timezone.utc)
+            except (TypeError, ValueError, OverflowError):
                 continue
         return None
 
@@ -105,7 +129,7 @@ class RSSFetcher:
 
         for entry in entries:
             title = (entry.get("title") or "").strip()
-            link = (entry.get("link") or "").strip()
+            link = self._entry_link(entry).strip()
             if not title or not link:
                 continue
 

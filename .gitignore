@@ -89,3 +89,18 @@ Thumbs.db
 
 # ── PID files ──────────────────────────────────────────
 *.pid
+# WordPress
+/opt/
+*.log
+*.cache
+__pycache__/
+*.pyc
+.env
+node_modules/
+# Bitnami
+/stack/
+/apps/
+/bnhelper/
+/properties.ini
+# Dev kit (já distribuído)
+brasileira-dev-kit/

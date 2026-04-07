@@ -6,7 +6,17 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import json as _json
+
+import httpx
+
 logger = logging.getLogger(__name__)
+
+
+def _parse_json_with_bom(text: str) -> Any:
+    """Parse JSON removendo BOM UTF-8 se presente."""
+    cleaned = text.lstrip("\ufeff")
+    return _json.loads(cleaned)
 
 
 def _extract_featured_image(post: dict[str, Any]) -> str:
@@ -97,7 +107,12 @@ async def scan_recent_posts(
                 "status": "publish",
                 "_embed": "1",
             }
-            response = await wp_client.get("/wp-json/wp/v2/posts", params=params)
+            # Usa httpx direto para tratar BOM UTF-8 na resposta
+            wp_url = getattr(wp_client, "base_url", None) or getattr(wp_client, "wp_url", "https://brasileira.news")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(f"{wp_url}/wp-json/wp/v2/posts", params=params)
+                resp.raise_for_status()
+                response = _parse_json_with_bom(resp.text)
         except Exception as exc:
             logger.warning("Erro ao buscar página %d de posts: %s", page, exc)
             break

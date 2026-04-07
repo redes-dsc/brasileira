@@ -1,19 +1,27 @@
 <?php
 /**
- * Bloco: custom — HTML controlado pelo curador (KSES).
+ * Bloco: HTML personalizado (KSES)
+ * Tipo: custom
  *
  * @package brasileira-theme
  */
 
 defined( 'ABSPATH' ) || exit;
 
-$b    = isset( $block ) && is_array( $block ) ? $block : array();
-$cfg  = isset( $b['config'] ) && is_array( $b['config'] ) ? $b['config'] : array();
-$html = isset( $cfg['html'] ) ? (string) $cfg['html'] : '';
-$bid  = isset( $b['id'] ) ? esc_attr( (string) $b['id'] ) : '';
+if ( empty( $block ) || empty( $block['config'] ) || ! is_array( $block['config'] ) ) {
+	return;
+}
 
-$extra = isset( $cfg['css_class'] ) ? sanitize_html_class( (string) $cfg['css_class'] ) : '';
-$tag   = isset( $cfg['wrapper_tag'] ) ? sanitize_key( (string) $cfg['wrapper_tag'] ) : 'section';
+$config = $block['config'];
+$html   = isset( $config['html'] ) ? (string) $config['html'] : '';
+if ( $html === '' ) {
+	return;
+}
+
+$bid = isset( $block['id'] ) ? esc_attr( (string) $block['id'] ) : '';
+
+$extra = isset( $config['css_class'] ) ? sanitize_html_class( (string) $config['css_class'] ) : '';
+$tag   = isset( $config['wrapper_tag'] ) ? sanitize_key( (string) $config['wrapper_tag'] ) : 'section';
 $allow = array( 'section', 'div', 'article', 'aside' );
 if ( ! in_array( $tag, $allow, true ) ) {
 	$tag = 'section';
@@ -24,6 +32,6 @@ if ( $extra !== '' ) {
 	$class .= ' ' . $extra;
 }
 ?>
-<<?php echo esc_attr( $tag ); ?> class="<?php echo esc_attr( $class ); ?>" data-block-id="<?php echo $bid; ?>">
+<<?php echo esc_attr( $tag ); ?> class="<?php echo esc_attr( $class ); ?>" data-block-id="<?php echo esc_attr( $bid ); ?>" data-block-type="custom">
 	<?php echo wp_kses_post( $html ); ?>
 </<?php echo esc_attr( $tag ); ?>>

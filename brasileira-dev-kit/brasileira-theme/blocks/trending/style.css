@@ -1,1 +1,80 @@
-/* Block: trending — styles (a ser implementado pela Stream C) */
+/* Bloco: trending */
+
+.blk-trending {
+	padding: 24px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-trending .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-trending__titulo {
+	margin: 0 0 16px;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-trending__cloud {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 14px;
+	align-items: center;
+}
+
+.blk-trending__tag {
+	display: inline-block;
+	padding: 4px 10px;
+	border-radius: 999px;
+	background: var(--color-bg-light, #f1f4f7);
+	color: var(--color-primary, #3490b4);
+	font-weight: 600;
+	text-decoration: none;
+	line-height: 1.3;
+}
+
+.blk-trending__tag:hover {
+	background: var(--color-primary, #3490b4);
+	color: #fff;
+}
+
+.blk-trending__list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	counter-reset: trending;
+}
+
+.blk-trending__list-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--color-border, #ededed);
+}
+
+.blk-trending__num {
+	font-weight: 700;
+	color: var(--color-primary, #3490b4);
+	min-width: 24px;
+}
+
+.blk-trending__link {
+	flex: 1;
+	font-weight: 600;
+	color: var(--color-title, #444);
+	text-decoration: none;
+}
+
+.blk-trending__link:hover {
+	color: var(--color-primary, #3490b4);
+}
+
+.blk-trending__count {
+	font-size: 12px;
+	color: var(--color-body, #717176);
+}

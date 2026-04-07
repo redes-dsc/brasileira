@@ -1,1 +1,94 @@
-/* Block: colunistas — styles (a ser implementado pela Stream C) */
+/* Bloco: colunistas */
+
+.blk-colunistas {
+	padding: 32px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-colunistas .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-colunistas__header {
+	margin-bottom: 20px;
+}
+
+.blk-colunistas__titulo {
+	margin: 0;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 22px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-colunistas__track {
+	display: flex;
+	gap: 20px;
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	padding-bottom: 8px;
+}
+
+.blk-colunistas__track::-webkit-scrollbar {
+	display: none;
+}
+
+.blk-colunistas__card {
+	flex: 0 0 200px;
+	scroll-snap-align: start;
+	text-align: center;
+}
+
+.blk-colunistas__link {
+	text-decoration: none;
+	color: inherit;
+	display: block;
+}
+
+.blk-colunistas__avatar {
+	margin: 0 auto 12px;
+	width: 88px;
+	height: 88px;
+}
+
+.blk-colunistas__avatar img,
+.blk-colunistas__img {
+	border-radius: 50%;
+	width: 80px;
+	height: 80px;
+	object-fit: cover;
+	border: 3px solid var(--color-primary, #3490b4);
+}
+
+.blk-colunistas__nome {
+	display: block;
+	font-weight: 700;
+	font-size: 14px;
+	color: var(--color-title, #444);
+	margin-bottom: 6px;
+}
+
+.blk-colunistas__col-titulo {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--color-body, #717176);
+	line-height: 1.4;
+	margin: 0;
+}
+
+.blk-colunistas--grid_4 .blk-colunistas__track {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	overflow: visible;
+	gap: 24px;
+}
+
+@media (max-width: 768px) {
+	.blk-colunistas--grid_4 .blk-colunistas__track {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}

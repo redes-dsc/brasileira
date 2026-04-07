@@ -1,1 +1,128 @@
-/* Block: ultimas — styles (a ser implementado pela Stream C) */
+/* Bloco: ultimas */
+
+.blk-ultimas {
+	padding: 24px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-ultimas .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-ultimas__header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 16px;
+}
+
+.blk-ultimas__titulo {
+	margin: 0;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-ultimas__live-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--color-breaking, #d32f2f);
+	animation: blk-ultimas-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes blk-ultimas-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.35;
+	}
+}
+
+.blk-ultimas__lista {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.blk-ultimas__item {
+	display: grid;
+	grid-template-columns: 70px 90px 1fr;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--color-border, #ededed);
+}
+
+.blk-ultimas__tempo {
+	font-size: 11px;
+	color: var(--color-body, #717176);
+	white-space: nowrap;
+}
+
+.blk-ultimas__cat {
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--color-primary, #3490b4);
+	text-transform: uppercase;
+}
+
+.blk-ultimas__titulo-link {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+	text-decoration: none;
+	line-height: 1.35;
+}
+
+.blk-ultimas__titulo-link:hover {
+	color: var(--color-primary, #3490b4);
+}
+
+/* Cards */
+.blk-ultimas__cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 16px;
+}
+
+.blk-ultimas__card-link {
+	display: block;
+	text-decoration: none;
+	color: inherit;
+}
+
+.blk-ultimas__card-fig {
+	margin: 0 0 10px;
+	overflow: hidden;
+	border-radius: 4px;
+}
+
+.blk-ultimas__card-fig img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+
+.blk-ultimas__card-title {
+	font-size: 15px;
+	font-weight: 700;
+	margin: 0 0 6px;
+	color: var(--color-title, #444);
+}
+
+@media (max-width: 600px) {
+	.blk-ultimas__item {
+		grid-template-columns: 60px 1fr;
+	}
+
+	.blk-ultimas__cat {
+		display: none;
+	}
+}

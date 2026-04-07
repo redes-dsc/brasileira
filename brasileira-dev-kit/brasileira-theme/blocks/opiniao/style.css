@@ -1,1 +1,119 @@
-/* Block: opiniao — styles (a ser implementado pela Stream C) */
+/* Bloco: opiniao */
+
+.blk-opiniao {
+	padding: 32px 0;
+	background: var(--color-bg-warm, #fcf7f5);
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-opiniao .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-opiniao__titulo {
+	margin: 0 0 24px;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 22px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-opiniao__grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 24px;
+}
+
+.blk-opiniao__card {
+	background: var(--color-bg-white, #fff);
+	border-radius: 6px;
+	padding: 20px;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.blk-opiniao__autor-info {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.blk-opiniao__autor-info img {
+	border-radius: 50%;
+	width: 56px;
+	height: 56px;
+	object-fit: cover;
+}
+
+.blk-opiniao__autor-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.blk-opiniao__autor-nome {
+	font-weight: 700;
+	font-size: 14px;
+	color: var(--color-title, #444);
+}
+
+.blk-opiniao__autor-cargo {
+	font-size: 12px;
+	color: var(--color-body, #717176);
+	line-height: 1.35;
+}
+
+.blk-opiniao__link {
+	text-decoration: none;
+	color: inherit;
+	display: block;
+}
+
+.blk-opiniao__titulo-art {
+	font-size: 17px;
+	font-weight: 700;
+	color: var(--color-title, #444);
+	line-height: 1.4;
+	margin: 0 0 8px;
+}
+
+.blk-opiniao__link:hover .blk-opiniao__titulo-art {
+	color: var(--color-primary, #3490b4);
+}
+
+.blk-opiniao__excerpt {
+	font-size: 14px;
+	color: var(--color-body, #717176);
+	line-height: 1.6;
+	margin: 0 0 10px;
+}
+
+.blk-opiniao__meta {
+	font-size: 12px;
+	color: var(--color-body, #717176);
+}
+
+.blk-opiniao--list_quotes .blk-opiniao__card {
+	border-left: 4px solid var(--color-primary, #3490b4);
+	background: transparent;
+	box-shadow: none;
+	padding-left: 16px;
+}
+
+.blk-opiniao--list_quotes .blk-opiniao__titulo-art::before {
+	content: '"';
+	font-size: 28px;
+	color: var(--color-primary, #3490b4);
+	line-height: 0;
+	vertical-align: -8px;
+	margin-right: 4px;
+}
+
+@media (max-width: 768px) {
+	.blk-opiniao__grid {
+		grid-template-columns: 1fr;
+	}
+}

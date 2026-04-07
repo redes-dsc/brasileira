@@ -1,1 +1,122 @@
-/* Block: especial — styles (a ser implementado pela Stream C) */
+/* Bloco: especial */
+
+.blk-especial {
+	padding: 32px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-especial .container {
+	max-width: var(--wide-width, 1400px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-especial__cover {
+	position: relative;
+	min-height: 320px;
+	border-radius: 8px;
+	overflow: hidden;
+	background: var(--color-bg-light, #f1f4f7) center/cover no-repeat;
+	background-image: var(--especial-img);
+}
+
+.blk-especial__overlay {
+	position: relative;
+	z-index: 1;
+	padding: 48px 32px;
+	background: linear-gradient(90deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.2) 100%);
+	color: #fff;
+	min-height: 320px;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.blk-especial__badge {
+	display: inline-block;
+	background: var(--color-breaking, #d32f2f);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 700;
+	padding: 4px 10px;
+	border-radius: 2px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	margin-bottom: 12px;
+	width: fit-content;
+}
+
+.blk-especial__title {
+	margin: 0;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: clamp(26px, 4vw, 44px);
+	font-weight: 600;
+	line-height: 1.15;
+	max-width: 720px;
+}
+
+.blk-especial__title a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.blk-especial__title a:hover {
+	text-decoration: underline;
+}
+
+.blk-especial__subtitle {
+	margin: 12px 0 0;
+	font-size: 18px;
+	opacity: 0.95;
+	max-width: 640px;
+}
+
+.blk-especial__side {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 32px;
+	align-items: center;
+}
+
+.blk-especial__fig {
+	margin: 0;
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.blk-especial__fig img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+
+.blk-especial__side-body .blk-especial__badge {
+	background: var(--color-primary, #3490b4);
+}
+
+.blk-especial__side-body .blk-especial__title {
+	font-size: clamp(22px, 3vw, 34px);
+	color: var(--color-title, #444);
+}
+
+.blk-especial__side-body .blk-especial__title a {
+	color: inherit;
+}
+
+.blk-especial__excerpt {
+	color: var(--color-body, #717176);
+	line-height: 1.6;
+	margin: 12px 0;
+}
+
+.blk-especial__cta {
+	font-weight: 700;
+	color: var(--color-primary, #3490b4);
+	text-decoration: none;
+}
+
+@media (max-width: 768px) {
+	.blk-especial__side {
+		grid-template-columns: 1fr;
+	}
+}

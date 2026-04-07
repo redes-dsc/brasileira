@@ -1,1 +1,10 @@
-/* Block: custom — styles (a ser implementado pela Stream C) */
+/* Bloco: custom — mínimo; estilos vêm do HTML/KSES */
+
+.blk-custom {
+	font-family: var(--font-sans, "Barlow", sans-serif);
+	color: var(--color-body, #717176);
+}
+
+.blk-custom a {
+	color: var(--color-primary, #3490b4);
+}

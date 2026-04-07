@@ -1,1 +1,101 @@
-/* Block: newsletter-cta — styles (a ser implementado pela Stream C) */
+/* Bloco: newsletter_cta */
+
+.blk-newsletter_cta {
+	padding: 28px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-newsletter_cta .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-newsletter_cta__inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+	padding: 24px;
+	background: linear-gradient(135deg, #e8f4fa 0%, var(--color-bg-light, #f1f4f7) 100%);
+	border-radius: 8px;
+	border: 1px solid var(--color-border, #ededed);
+}
+
+.blk-newsletter_cta__title {
+	margin: 0 0 6px;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 22px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-newsletter_cta__subtitle {
+	margin: 0;
+	font-size: 14px;
+	color: var(--color-body, #717176);
+}
+
+.blk-newsletter_cta__form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	align-items: center;
+}
+
+.blk-newsletter_cta__input {
+	min-width: 220px;
+	flex: 1 1 200px;
+	padding: 12px 14px;
+	border: 1px solid var(--color-border, #ededed);
+	border-radius: 4px;
+	font-family: inherit;
+	font-size: 15px;
+}
+
+.blk-newsletter_cta__btn {
+	padding: 12px 22px;
+	background: var(--color-primary, #3490b4);
+	color: #fff;
+	border: 0;
+	border-radius: 4px;
+	font-weight: 700;
+	cursor: pointer;
+	font-family: inherit;
+}
+
+.blk-newsletter_cta__btn:hover {
+	filter: brightness(1.05);
+}
+
+.blk-newsletter_cta--inline_form .blk-newsletter_cta__inner {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.blk-newsletter_cta--popup_trigger .blk-newsletter_cta__inner {
+	justify-content: center;
+	text-align: center;
+}
+
+.blk-newsletter_cta .sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	border: 0;
+}
+
+@media (max-width: 600px) {
+	.blk-newsletter_cta__form {
+		width: 100%;
+	}
+
+	.blk-newsletter_cta__input {
+		min-width: 100%;
+	}
+}

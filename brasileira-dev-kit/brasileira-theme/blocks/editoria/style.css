@@ -1,1 +1,223 @@
-/* Block: editoria — styles (a ser implementado pela Stream C) */
+/* Bloco: editoria */
+
+.blk-editoria {
+	padding: 32px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-editoria .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-editoria__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 20px;
+	padding-bottom: 12px;
+	border-bottom: 2px solid var(--color-border, #ededed);
+}
+
+.blk-editoria__label {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-editoria__label-bar {
+	display: inline-block;
+	width: 4px;
+	height: 22px;
+	background: var(--color-primary, #3490b4);
+	border-radius: 2px;
+}
+
+.blk-editoria__more {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--color-primary, #3490b4);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.blk-editoria__more:hover {
+	text-decoration: underline;
+}
+
+.blk-editoria__layout-with-sidebar {
+	display: grid;
+	grid-template-columns: 1fr 300px;
+	gap: 32px;
+	align-items: start;
+}
+
+.blk-editoria__grid {
+	display: grid;
+	gap: 24px;
+}
+
+.blk-editoria--grid_3 .blk-editoria__grid {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.blk-editoria--grid_4_sidebar .blk-editoria__grid {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.blk-editoria--grid_5 .blk-editoria__grid {
+	grid-template-columns: 2fr 1fr 1fr;
+	grid-template-rows: auto auto;
+}
+
+.blk-editoria--grid_5 .blk-editoria__card--hero {
+	grid-column: 1;
+	grid-row: 1 / span 2;
+}
+
+.blk-editoria--grid_6_mosaic .blk-editoria__grid {
+	grid-template-columns: repeat(3, 1fr);
+	grid-template-rows: auto auto;
+}
+
+.blk-editoria--grid_6_mosaic .blk-editoria__card--mosaic-hero {
+	grid-column: 1 / span 2;
+	grid-row: 1 / span 2;
+}
+
+.blk-editoria__card-figure {
+	margin: 0 0 12px;
+	overflow: hidden;
+	border-radius: 4px;
+}
+
+.blk-editoria__card-figure img {
+	width: 100%;
+	height: auto;
+	display: block;
+	transition: transform 0.3s ease;
+}
+
+.blk-editoria__card-link:hover .blk-editoria__card-figure img {
+	transform: scale(1.03);
+}
+
+.blk-editoria__card-link {
+	text-decoration: none;
+	color: inherit;
+	display: block;
+}
+
+.blk-editoria__card-cat {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--color-primary, #3490b4);
+}
+
+.blk-editoria__card-title {
+	font-size: 16px;
+	font-weight: 700;
+	color: var(--color-title, #444);
+	line-height: 1.35;
+	margin: 6px 0;
+}
+
+.blk-editoria__card--hero .blk-editoria__card-title {
+	font-size: clamp(18px, 2.2vw, 24px);
+}
+
+.blk-editoria__card-meta {
+	font-size: 12px;
+	color: var(--color-body, #717176);
+}
+
+/* Lista compacta */
+.blk-editoria__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+}
+
+.blk-editoria__list-item {
+	border-bottom: 1px solid var(--color-border, #ededed);
+}
+
+.blk-editoria__list-link {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+	padding: 14px 0;
+	text-decoration: none;
+	color: inherit;
+}
+
+.blk-editoria__list-thumb {
+	flex: 0 0 120px;
+	overflow: hidden;
+	border-radius: 4px;
+}
+
+.blk-editoria__list-thumb img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+
+.blk-editoria__list-body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.blk-editoria__list-title {
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--color-title, #444);
+	line-height: 1.35;
+}
+
+.blk-editoria__sidebar .widget {
+	margin-bottom: 16px;
+}
+
+@media (max-width: 1024px) {
+	.blk-editoria--grid_3 .blk-editoria__grid,
+	.blk-editoria--grid_4_sidebar .blk-editoria__grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.blk-editoria__layout-with-sidebar {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 768px) {
+	.blk-editoria--grid_3 .blk-editoria__grid,
+	.blk-editoria--grid_4_sidebar .blk-editoria__grid,
+	.blk-editoria--grid_5 .blk-editoria__grid,
+	.blk-editoria--grid_6_mosaic .blk-editoria__grid {
+		grid-template-columns: 1fr;
+	}
+
+	.blk-editoria--grid_5 .blk-editoria__card--hero {
+		grid-row: auto;
+	}
+
+	.blk-editoria--grid_6_mosaic .blk-editoria__card--mosaic-hero {
+		grid-column: auto;
+		grid-row: auto;
+	}
+}

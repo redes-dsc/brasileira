@@ -1,1 +1,97 @@
-/* Block: mais-lidas — styles (a ser implementado pela Stream C) */
+/* Bloco: mais_lidas */
+
+.blk-mais_lidas {
+	padding: 24px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-mais_lidas .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-mais_lidas__header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.blk-mais_lidas__titulo {
+	margin: 0;
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--color-title, #444);
+}
+
+.blk-mais_lidas__periodo {
+	font-size: 12px;
+	color: var(--color-body, #717176);
+}
+
+.blk-mais_lidas__lista {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	counter-reset: blk-mais-lidas-rank;
+}
+
+.blk-mais_lidas__item {
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	padding: 14px 0;
+	border-bottom: 1px solid var(--color-border, #ededed);
+}
+
+.blk-mais_lidas__num {
+	font-family: var(--font-condensed, "Barlow Condensed", sans-serif);
+	font-size: 40px;
+	font-weight: 700;
+	color: var(--color-border, #ededed);
+	line-height: 1;
+	min-width: 40px;
+	text-align: right;
+}
+
+.blk-mais_lidas__item:nth-child(1) .blk-mais_lidas__num {
+	color: var(--color-primary, #3490b4);
+}
+
+.blk-mais_lidas__item:nth-child(2) .blk-mais_lidas__num,
+.blk-mais_lidas__item:nth-child(3) .blk-mais_lidas__num {
+	color: #aaa;
+}
+
+.blk-mais_lidas__cat {
+	display: block;
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--color-primary, #3490b4);
+	margin-bottom: 4px;
+}
+
+.blk-mais_lidas__titulo-link {
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--color-title, #444);
+	line-height: 1.4;
+	text-decoration: none;
+}
+
+.blk-mais_lidas__titulo-link:hover {
+	color: var(--color-primary, #3490b4);
+}
+
+.blk-mais_lidas--sidebar_compact .blk-mais_lidas__num {
+	font-size: 24px;
+	min-width: 28px;
+}
+
+.blk-mais_lidas--sidebar_compact .blk-mais_lidas__titulo-link {
+	font-size: 14px;
+}

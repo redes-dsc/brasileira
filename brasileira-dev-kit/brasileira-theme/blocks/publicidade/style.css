@@ -1,1 +1,64 @@
-/* Block: publicidade — styles (a ser implementado pela Stream C) */
+/* Bloco: publicidade */
+
+.blk-publicidade {
+	padding: 12px 0;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-publicidade .container {
+	max-width: var(--wide-width, 1400px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-publicidade .blk-publicidade__wrapper {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	width: 100%;
+}
+
+.blk-publicidade .blk-publicidade__label {
+	font-size: 10px;
+	color: var(--color-body, #717176);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	opacity: 0.65;
+}
+
+.blk-publicidade .ad-container {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	width: 100%;
+	background: var(--color-bg-light, #f1f4f7);
+}
+
+.blk-publicidade--leaderboard .ad-container {
+	min-height: 90px;
+}
+
+.blk-publicidade--rectangle .ad-container {
+	min-height: 250px;
+	max-width: 300px;
+	margin-inline: auto;
+}
+
+.blk-publicidade--fullwidth .ad-container {
+	min-height: 250px;
+	max-width: 970px;
+	margin-inline: auto;
+}
+
+.blk-publicidade--mobile .ad-container {
+	min-height: 50px;
+	max-width: 320px;
+	margin-inline: auto;
+}
+
+@media (max-width: 768px) {
+	.blk-publicidade--leaderboard .ad-container {
+		min-height: 50px;
+	}
+}

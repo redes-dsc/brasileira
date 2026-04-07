@@ -1,1 +1,77 @@
-/* Block: ticker — styles (a ser implementado pela Stream C) */
+/* Bloco: ticker */
+
+.blk-ticker {
+	padding: 8px 0;
+	overflow: hidden;
+	font-family: var(--font-sans, "Barlow", sans-serif);
+}
+
+.blk-ticker .container {
+	max-width: var(--content-width, 1200px);
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.blk-ticker--bar_dark {
+	background: var(--color-title, #444);
+	color: #fff;
+}
+
+.blk-ticker--bar_light {
+	background: var(--color-bg-light, #f1f4f7);
+	color: var(--color-title, #444);
+}
+
+.blk-ticker--horizontal_scroll .blk-ticker__track {
+	display: flex;
+	gap: 32px;
+	white-space: nowrap;
+	animation: blk-ticker-scroll 35s linear infinite;
+}
+
+.blk-ticker--static_grid .blk-ticker__track {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	gap: 12px;
+	white-space: normal;
+	animation: none;
+	flex-wrap: wrap;
+}
+
+.blk-ticker__item {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.blk-ticker__sym {
+	opacity: 0.85;
+	text-transform: uppercase;
+}
+
+.blk-ticker__alta {
+	color: #4caf50;
+}
+
+.blk-ticker__baixa {
+	color: #f44336;
+}
+
+@keyframes blk-ticker-scroll {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(-50%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.blk-ticker--horizontal_scroll .blk-ticker__track {
+		animation: none;
+		flex-wrap: wrap;
+		white-space: normal;
+	}
+}

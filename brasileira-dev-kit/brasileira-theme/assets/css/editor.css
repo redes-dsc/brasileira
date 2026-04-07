@@ -1,0 +1,46 @@
+/* Estilos do editor Gutenberg — espelha tokens do front */
+
+@import url("https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600&display=swap");
+
+.editor-styles-wrapper {
+	--color-primary: #3490b4;
+	--color-title: #444444;
+	--color-body: #717176;
+	--color-border: #ededed;
+	--color-bg-white: #ffffff;
+	--color-bg-light: #f1f4f7;
+	--color-breaking: #d32f2f;
+	--font-sans: "Barlow", system-ui, sans-serif;
+	--font-condensed: "Barlow Condensed", system-ui, sans-serif;
+
+	font-family: var(--font-sans);
+	font-size: 16px;
+	line-height: 1.6;
+	color: var(--color-body);
+	background: var(--color-bg-white);
+	max-width: 1200px;
+	margin-inline: auto;
+	padding-inline: 16px;
+}
+
+.editor-styles-wrapper .wp-block {
+	color: inherit;
+}
+
+.editor-styles-wrapper h1,
+.editor-styles-wrapper h2 {
+	font-family: var(--font-condensed);
+	font-weight: 600;
+	color: var(--color-title);
+}
+
+.editor-styles-wrapper h3,
+.editor-styles-wrapper h4 {
+	font-family: var(--font-sans);
+	font-weight: 700;
+	color: var(--color-title);
+}
+
+.editor-styles-wrapper a {
+	color: var(--color-primary);
+}

@@ -1,0 +1,126 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"settings": {
+		"appearanceTools": true,
+		"useRootPaddingAwareAlignments": true,
+		"color": {
+			"palette": [
+				{ "slug": "primary", "color": "#3490B4", "name": "Azul Petróleo" },
+				{ "slug": "title", "color": "#444444", "name": "Títulos" },
+				{ "slug": "body", "color": "#717176", "name": "Corpo" },
+				{ "slug": "border", "color": "#EDEDED", "name": "Bordas" },
+				{ "slug": "bg-white", "color": "#FFFFFF", "name": "Fundo Branco" },
+				{ "slug": "bg-light", "color": "#F1F4F7", "name": "Fundo Claro" },
+				{ "slug": "bg-warm", "color": "#FCF7F5", "name": "Fundo Quente" },
+				{ "slug": "breaking", "color": "#D32F2F", "name": "Breaking" },
+				{ "slug": "tag", "color": "#F5A623", "name": "Tag" },
+				{ "slug": "white", "color": "#FFFFFF", "name": "Branco" },
+				{ "slug": "black", "color": "#000000", "name": "Preto" }
+			],
+			"defaultPalette": false,
+			"defaultGradients": false,
+			"customDuotone": false
+		},
+		"typography": {
+			"fontFamilies": [
+				{
+					"slug": "barlow",
+					"name": "Barlow",
+					"fontFamily": "'Barlow', system-ui, -apple-system, sans-serif"
+				},
+				{
+					"slug": "barlow-condensed",
+					"name": "Barlow Condensed",
+					"fontFamily": "'Barlow Condensed', system-ui, -apple-system, sans-serif"
+				}
+			],
+			"defaultFontSizes": false,
+			"fontSizes": [
+				{ "slug": "xs", "size": "12px", "name": "Extra Pequeno" },
+				{ "slug": "sm", "size": "14px", "name": "Pequeno" },
+				{ "slug": "md", "size": "16px", "name": "Médio" },
+				{ "slug": "lg", "size": "18px", "name": "Grande" },
+				{ "slug": "xl", "size": "22px", "name": "Extra Grande" },
+				{ "slug": "2xl", "size": "28px", "name": "2XL" },
+				{ "slug": "3xl", "size": "36px", "name": "3XL" },
+				{ "slug": "4xl", "size": "48px", "name": "4XL" }
+			]
+		},
+		"spacing": {
+			"defaultSpacingSizes": false,
+			"spacingSizes": [
+				{ "slug": "1", "size": "8px", "name": "Espaço 1" },
+				{ "slug": "2", "size": "12px", "name": "Espaço 2" },
+				{ "slug": "3", "size": "16px", "name": "Espaço 3" },
+				{ "slug": "4", "size": "20px", "name": "Espaço 4" },
+				{ "slug": "5", "size": "24px", "name": "Espaço 5" },
+				{ "slug": "6", "size": "32px", "name": "Espaço 6" },
+				{ "slug": "7", "size": "40px", "name": "Espaço 7" },
+				{ "slug": "8", "size": "48px", "name": "Espaço 8" },
+				{ "slug": "9", "size": "56px", "name": "Espaço 9" },
+				{ "slug": "10", "size": "64px", "name": "Espaço 10" },
+				{ "slug": "11", "size": "80px", "name": "Espaço 11" },
+				{ "slug": "12", "size": "96px", "name": "Espaço 12" }
+			]
+		},
+		"layout": {
+			"contentSize": "1200px",
+			"wideSize": "1400px"
+		},
+		"blocks": {
+			"core/navigation": {
+				"layout": { "type": "flex" }
+			}
+		}
+	},
+	"styles": {
+		"typography": {
+			"fontFamily": "var(--wp--preset--font-family--barlow)",
+			"fontSize": "var(--wp--preset--font-size--md)",
+			"lineHeight": "1.6",
+			"color": "var(--wp--preset--color--body)"
+		},
+		"color": {
+			"background": "var(--wp--preset--color--bg-white)",
+			"text": "var(--wp--preset--color--body)"
+		},
+		"elements": {
+			"h1": {
+				"typography": {
+					"fontFamily": "var(--wp--preset--font-family--barlow-condensed)",
+					"fontWeight": "600",
+					"color": "var(--wp--preset--color--title)"
+				}
+			},
+			"h2": {
+				"typography": {
+					"fontFamily": "var(--wp--preset--font-family--barlow-condensed)",
+					"fontWeight": "600",
+					"color": "var(--wp--preset--color--title)"
+				}
+			},
+			"h3": {
+				"typography": {
+					"fontFamily": "var(--wp--preset--font-family--barlow)",
+					"fontWeight": "700",
+					"color": "var(--wp--preset--color--title)"
+				}
+			},
+			"link": {
+				"color": {
+					"text": "var(--wp--preset--color--primary)"
+				}
+			}
+		}
+	},
+	"customTemplates": [
+		{ "name": "page-subhome", "title": "Subhome Editorial", "postTypes": [ "page" ] },
+		{ "name": "page-macrotema", "title": "Macrotema", "postTypes": [ "page" ] }
+	],
+	"templateParts": [
+		{ "name": "header", "title": "Cabeçalho", "area": "header" },
+		{ "name": "footer", "title": "Rodapé", "area": "footer" },
+		{ "name": "topbar", "title": "Barra Superior", "area": "uncategorized" }
+	]
+}

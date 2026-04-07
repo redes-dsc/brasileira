@@ -82,7 +82,7 @@ def load_config() -> CuradorConfig:
     return CuradorConfig(
         wp_base_url=os.getenv("WP_URL", "https://brasileira.news"),
         wp_user=os.getenv("WP_USER", "iapublicador"),
-        wp_app_password=os.getenv("WP_AUTH", ""),
+        wp_app_password=os.getenv("WP_AUTH") or os.getenv("WP_APP_PASS", ""),
         homepage_page_id=int(os.getenv("HOMEPAGE_PAGE_ID", "18135")),
         litellm_base_url=os.getenv("LITELLM_BASE_URL", "http://localhost:4000"),
         litellm_api_key=os.getenv("LITELLM_API_KEY", ""),

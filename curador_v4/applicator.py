@@ -100,6 +100,9 @@ async def manage_macrotemas(
         if isinstance(tag_id, int):
             current_tags.add(tag_id)
 
+    # Limitar a top 5 macrotemas por ciclo para evitar timeout
+    detected_macrotemas = detected_macrotemas[:5]
+
     detected_tags: set[int] = set()
     for mt in detected_macrotemas:
         tag_id = mt.get("tag_id")

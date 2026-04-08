@@ -253,21 +253,18 @@ def get_effective_queries(
 
 def get_posts_awaiting_photo(per_page: int = 20) -> list[dict[str, Any]]:
     """
-    Busca posts com tag 'revisado' mas sem tags 'foto-verificada', 'sem-imagem' ou 's4-falha'.
-
-    NOTA: Esta função usa WordPress REST API diretamente, não Supabase,
-    porque os dados de tags vivem no WordPress.
-
-    Args:
-        per_page: Quantidade máxima de posts a retornar
-
-    Returns:
-        Lista de dicts com post_id e dados básicos do post
+    Busca posts publicados nas últimas 24h SEM imagem destacada.
+    
+    Estratégia: buscar posts recentes sem featured_media, excluindo os que
+    já foram marcados como 'sem-imagem' ou 's4-falha' (já tentados).
+    Não depende mais da tag 'revisado' do S3.
+    
+    Prioridade: posts mais recentes primeiro.
     """
     try:
-        # Importa wp_api para evitar circular import
         from .wp_api import get_wp_session, _get_tag_id_by_slug
         import os
+        import json
         try:
             from motor_rss.config import WP_API_BASE
         except ImportError:
@@ -275,33 +272,42 @@ def get_posts_awaiting_photo(per_page: int = 20) -> list[dict[str, Any]]:
 
         session = get_wp_session()
         
-        # Resolve tag_slug 'revisado' para tag_id
-        tag_id = _get_tag_id_by_slug("revisado")
-        if not tag_id:
-            logger.warning("Tag 'revisado' não encontrada")
-            return []
+        # Apenas últimas 24h, mais recentes primeiro
+        from datetime import datetime, timedelta, timezone
+        after_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
         
-        # Resolver IDs de tags a excluir
-        exclude_ids = []
+        # Resolver IDs de tags a excluir (posts já processados)
+        exclude_tag_ids = []
         for slug in ["foto-verificada", "sem-imagem", "s4-falha"]:
             tid = _get_tag_id_by_slug(slug)
             if tid:
-                exclude_ids.append(str(tid))
+                exclude_tag_ids.append(tid)
         
         params = {
-            "tags": tag_id,
             "per_page": per_page,
             "status": "publish",
+            "after": after_24h,
+            "orderby": "date",
+            "order": "desc",
             "_fields": "id,title,tags,featured_media,date",
         }
         
-        # Usar tags__not_in para excluir múltiplas tags na query
-        if exclude_ids:
-            params["tags_exclude"] = [int(tid) for tid in exclude_ids]  # requests handles list → repeated params
+        if exclude_tag_ids:
+            params["tags_exclude"] = ",".join(str(t) for t in exclude_tag_ids)
         
         response = session.get(f"{WP_API_BASE}/posts", params=params, timeout=30)
         response.raise_for_status()
-        import json; return json.loads(response.text.lstrip("\ufeff"))
+        posts = json.loads(response.text.lstrip("\ufeff"))
+        
+        # Filtrar apenas posts SEM featured_media (= 0 ou ausente)
+        sem_foto = [p for p in posts if not p.get("featured_media")]
+        
+        logger.info(
+            f"get_posts_awaiting_photo: {len(posts)} recentes, "
+            f"{len(sem_foto)} sem foto (excluídas {len(exclude_tag_ids)} tags)"
+        )
+        
+        return sem_foto
 
     except Exception as e:
         logger.error(f"get_posts_awaiting_photo falhou: {e}")

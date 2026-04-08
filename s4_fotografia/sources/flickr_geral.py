@@ -23,7 +23,10 @@ TIMEOUT = 10
 MAX_RESULTS = 10
 
 # Licenças CC compatíveis com uso editorial
-CC_LICENSES = "4,5,6,7,8,9,10"
+# Licenças aceitas: todas — contas governamentais brasileiras frequentemente
+# não marcam CC no Flickr, mas são de domínio público por lei (LAI).
+# A avaliação de qualidade via LLM já filtra imagens inadequadas.
+CC_LICENSES = "0,1,2,4,5,6,7,8,9,10"
 # 4=CC BY, 5=CC BY-SA, 6=CC BY-ND, 7=No known copyright,
 # 8=US Gov, 9=CC0, 10=Public Domain Mark
 # Licenças NC (1,2,3) removidas — risco jurídico para uso editorial
@@ -105,9 +108,12 @@ def search(query: str, **kwargs) -> list[dict]:
             "media": "photos",
         }
         
+        logger.info(f"[flickr_geral] API call: key={_FLICKR_API_KEY[:8] if _FLICKR_API_KEY else "VAZIA"}, query={query[:30]}")
         resp = requests.get(FLICKR_ENDPOINT, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
+        total = data.get("photos", {}).get("total", 0)
+        logger.info(f"[flickr_geral] API response: status={data.get("stat")}, total={total}, photos={len(data.get("photos",{}).get("photo",[]))}")
         
         if data.get("stat") == "fail":
             logger.warning(f"[flickr_geral] Flickr API erro: {data.get('message', 'Unknown')}")

@@ -410,7 +410,7 @@ Gere uma query ALTERNATIVA (3-5 palavras), mais GENÉRICA e VISUAL:"""
         )
         
         if response:
-            query = response.strip().strip(""'").rstrip(".,;:!?")
+            query = response.strip().strip(chr(34) + chr(39)).rstrip(".,;:!?")
             query = " ".join(query.split())
             word_count = len(query.split())
             

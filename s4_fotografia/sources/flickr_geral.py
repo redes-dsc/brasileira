@@ -77,12 +77,9 @@ def search(query: str, **kwargs) -> list[dict]:
     """
     global _FLICKR_API_KEY
     if _FLICKR_API_KEY is None:
-        _FLICKR_API_KEY = os.getenv("_FLICKR_API_KEY", "")
-    global _FLICKR_API_KEY
-    if _FLICKR_API_KEY is None:
-        _FLICKR_API_KEY = os.getenv("_FLICKR_API_KEY", "")
+        _FLICKR_API_KEY = os.getenv("FLICKR_API_KEY", "")
     if not _FLICKR_API_KEY:
-        logger.warning("[flickr_geral] _FLICKR_API_KEY não configurada")
+        logger.warning("[flickr_geral] FLICKR_API_KEY não configurada")
         return []
     
     if not query or not query.strip():

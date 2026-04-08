@@ -30,7 +30,7 @@ from s4_fotografia.supabase_ops import (
 )
 from s4_fotografia.is_fonte_publica import is_fonte_publica
 from s4_fotografia.build_search_query import build_search_query
-from s4_fotografia.find_image import find_image
+from s4_fotografia.find_image import find_image_with_retry
 from s4_fotografia.wp_upload import process_and_upload
 
 logger = logging.getLogger(__name__)
@@ -235,8 +235,8 @@ def processar_post(post_id: int) -> dict:
             logger.info(f"[processar_post] Query gerada: '{search_query}'")
 
         # 3. Buscar imagem via pipeline 3-fases
-        image_result = find_image(
-            query=search_query,
+        image_result = find_image_with_retry(
+            initial_query=search_query,
             post_id=post_id,
             category_slug=category_slug,
             editorial_context=editorial_context,

@@ -35,6 +35,7 @@ from s4_fotografia.supabase_ops import (
     check_image_used,
 )
 from s4_fotografia.wp_upload import process_and_upload
+from s4_fotografia.build_search_query import build_search_query
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ logger = logging.getLogger(__name__)
 QUALITY_THRESHOLD = 5.0  # Score mínimo para aceitar imagem (0-10)
 MAX_CANDIDATES_PER_SOURCE = 5  # Limitar candidatos para avaliação LLM
 MAX_REUSE_COUNT = 2  # Permite reuso se used_count <= este valor
-PHASE_2_TIMEOUT = 15  # Timeout para execução paralela da Phase 2
+PHASE_2_TIMEOUT = 15
+MAX_QUERY_RETRIES = 3  # Máximo de tentativas com queries adaptadas  # Timeout para execução paralela da Phase 2
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +75,23 @@ BONIFIQUE:
 Responda APENAS com JSON:
 {"score": 7.5, "reason": "Justificativa breve em uma linha"}"""
 
+
+RETRY_QUERY_SYSTEM_PROMPT = """Você é um especialista em busca de imagens jornalísticas brasileiras.
+
+A query anterior NÃO encontrou imagens adequadas. Gere uma query ALTERNATIVA.
+
+ESTRATÉGIAS DE ADAPTAÇÃO:
+1. Se a query era muito específica (nome próprio raro, evento local), GENERALIZE
+   - "Doação órgãos Hospital Jandhuy Carneiro" → "doação órgãos hospital"
+2. Se tinha nome de pessoa pouco conhecida, use o CARGO ou INSTITUIÇÃO
+   - "Samira Sagr BBB 26" → "BBB reality show"
+3. Se era sobre lugar específico, use a REGIÃO ou CONTEXTO
+   - "Navio Maersk Canal do Panamá" → "navio cargueiro canal"
+4. NUNCA repita a query anterior
+5. Mantenha 3-5 palavras
+6. Foque no VISUAL: o que apareceria numa FOTO dessa notícia?
+
+Responda APENAS com a nova query, sem aspas, sem explicação."""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Função Principal
@@ -260,8 +279,8 @@ def find_image(
             )
             return None
 
-    # Pipeline exaurido sem encontrar imagem
-    logger.warning(f"[find_image] Pipeline 3-fases exaurido sem imagem para post {post_id}")
+    # Pipeline exaurido sem encontrar imagem com esta query
+    logger.warning(f"[find_image] Pipeline exaurido para query '{query}' (post {post_id})")
     update_query_stats(
         category=category_slug,
         topic=main_topic or (query.split()[0] if query else ""),
@@ -270,6 +289,140 @@ def find_image(
         success=False,
     )
     return None
+
+
+def find_image_with_retry(
+    initial_query: str,
+    post_id: int,
+    category_slug: str,
+    editorial_context: Optional[dict] = None,
+    max_retries: int = MAX_QUERY_RETRIES,
+) -> Optional[dict]:
+    """
+    Tenta encontrar imagem com múltiplas queries adaptadas.
+    
+    Se a query A falha em todo o pipeline, gera query B via LLM
+    (mais genérica, ângulo diferente) e tenta novamente.
+    
+    Args:
+        initial_query: Query inicial gerada por build_search_query
+        post_id: ID do post WordPress
+        category_slug: Slug da categoria
+        editorial_context: Contexto editorial do S3
+        max_retries: Máximo de tentativas (incluindo a primeira)
+    
+    Returns:
+        Dict com imagem selecionada ou None
+    """
+    failed_queries = []
+    current_query = initial_query
+    
+    for attempt in range(max_retries):
+        logger.info(
+            f"[find_image_retry] Tentativa {attempt + 1}/{max_retries} "
+            f"para post {post_id}, query: '{current_query}'"
+        )
+        
+        result = find_image(
+            query=current_query,
+            post_id=post_id,
+            category_slug=category_slug,
+            editorial_context=editorial_context,
+        )
+        
+        if result:
+            if attempt > 0:
+                logger.info(
+                    f"[find_image_retry] Sucesso na tentativa {attempt + 1} "
+                    f"com query '{current_query}' (post {post_id})"
+                )
+            return result
+        
+        # Query falhou — gerar alternativa via LLM
+        failed_queries.append(current_query)
+        
+        if attempt < max_retries - 1:
+            new_query = _generate_alternative_query(
+                editorial_context=editorial_context or {},
+                category_slug=category_slug,
+                failed_queries=failed_queries,
+            )
+            
+            if new_query and new_query not in failed_queries:
+                current_query = new_query
+                logger.info(
+                    f"[find_image_retry] Nova query gerada: '{new_query}' "
+                    f"(tentativa {attempt + 2})"
+                )
+            else:
+                logger.warning(
+                    f"[find_image_retry] Não foi possível gerar query alternativa. "
+                    f"Encerrando após {attempt + 1} tentativas."
+                )
+                break
+    
+    logger.warning(
+        f"[find_image_retry] Todas as {len(failed_queries)} queries falharam "
+        f"para post {post_id}: {failed_queries}"
+    )
+    return None
+
+
+def _generate_alternative_query(
+    editorial_context: dict,
+    category_slug: str,
+    failed_queries: list[str],
+) -> Optional[str]:
+    """
+    Gera query alternativa via LLM com base nas queries que falharam.
+    
+    Args:
+        editorial_context: Contexto editorial
+        category_slug: Categoria do artigo
+        failed_queries: Lista de queries que já falharam
+    
+    Returns:
+        Nova query ou None se falhar
+    """
+    try:
+        summary = editorial_context.get("article_summary", "") or ""
+        topics = editorial_context.get("main_topics", []) or []
+        entities = editorial_context.get("main_entities", []) or []
+        
+        # Montar contexto mínimo
+        context_text = summary[:200] if summary else " ".join(topics[:3])
+        
+        user_prompt = f"""ARTIGO:
+{context_text}
+Categoria: {category_slug}
+Entidades: {', '.join(str(e) for e in entities[:3]) if entities else 'não identificadas'}
+
+QUERIES QUE FALHARAM (0 resultados em todas as fontes):
+{chr(10).join(f'- "{q}"' for q in failed_queries)}
+
+Gere uma query ALTERNATIVA (3-5 palavras), mais GENÉRICA e VISUAL:"""
+
+        response, provider = call_llm(
+            system_prompt=RETRY_QUERY_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            tier=TIER_ECONOMY,
+            parse_json=False,
+        )
+        
+        if response:
+            query = response.strip().strip(""'").rstrip(".,;:!?")
+            query = " ".join(query.split())
+            word_count = len(query.split())
+            
+            if 2 <= word_count <= 8 and query not in failed_queries:
+                logger.info(f"[retry_query] Query alternativa via {provider}: '{query}'")
+                return query
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"[retry_query] Erro ao gerar query alternativa: {e}")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

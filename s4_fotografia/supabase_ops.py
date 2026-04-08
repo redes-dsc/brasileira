@@ -273,8 +273,6 @@ def get_posts_awaiting_photo(per_page: int = 20) -> list[dict[str, Any]]:
         session = get_wp_session()
         
         # Apenas últimas 24h, mais recentes primeiro
-        from datetime import datetime, timedelta, timezone
-        after_24h = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%S")
         
         # Resolver IDs de tags a excluir (posts já processados)
         exclude_tag_ids = []
@@ -286,7 +284,6 @@ def get_posts_awaiting_photo(per_page: int = 20) -> list[dict[str, Any]]:
         params = {
             "per_page": per_page,
             "status": "publish",
-            "after": after_24h,
             "orderby": "date",
             "order": "desc",
             "_fields": "id,title,tags,featured_media,date",

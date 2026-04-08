@@ -274,7 +274,7 @@ def get_posts_awaiting_photo(per_page: int = 20) -> list[dict[str, Any]]:
         
         # Apenas últimas 24h, mais recentes primeiro
         from datetime import datetime, timedelta, timezone
-        after_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
+        after_24h = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%S")
         
         # Resolver IDs de tags a excluir (posts já processados)
         exclude_tag_ids = []
